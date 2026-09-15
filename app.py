@@ -416,8 +416,9 @@ def fin_saison(valeur) -> int:
 
 
 # --- Continuite entre saisons ------------------------------------------------
-# Les graphes Evolution et Adversaires ajoutent les AUTRES saisons du joueur
-# quand il y jouait au MEME poste, dans le MEME club et la MEME division.
+# Le graphe Adversaires ajoute les AUTRES saisons du joueur quand il y jouait
+# au MEME poste, dans le MEME club et la MEME division (la courbe Evolution va
+# plus loin, cf. lignes_forme_etendue plus bas).
 # Pourquoi c'est comparable : db_build.py score chaque archetype contre une
 # reference commune a toutes les saisons et tous les championnats, un niveau
 # 55 en 24/25 vaut donc un niveau 55 en 25/26. Pourquoi ces trois conditions :
@@ -442,7 +443,9 @@ def autres_saisons(lignes: pd.DataFrame, iteration: int) -> list[str]:
 
 
 def historique(j, arch: str) -> pd.DataFrame:
-    """Toutes les saisons du joueur a cet archetype, la plus recente en tete."""
+    """Toutes les saisons du joueur a cet archetype, la plus recente en tete.
+      continuite : meme poste, club et division -> dans les DEUX graphes ;
+      courbe     : meme poste, autre club et/ou championnat -> courbe Evolution seule."""
     h = requete("""SELECT saison, club, competition, position AS poste, round(score,1) AS score,
             minutes_jouees AS minutes, playerId, squadId, iterationId, position
         FROM v_joueurs WHERE playerId=? AND archetype=?""", (int(j.playerId), arch))
@@ -452,7 +455,34 @@ def historique(j, arch: str) -> pd.DataFrame:
                      & (h["position"] == j.position))
     h["continuite"] = ((h["squadId"] == int(j.squadId)) & (h["competition"] == j.competition)
                        & (h["position"] == j.position) & ~h["courante"])
+    h["courbe"] = (h["position"] == j.position) & ~h["courante"] & ~h["continuite"]
     return h
+
+
+# --- Courbe Evolution etendue (demande Alex, 15/09/2026) ----------------------
+# Contrairement au graphe Adversaires, la courbe Evolution accepte aussi les
+# saisons dans un AUTRE club et/ou championnat (meme poste toujours), pour
+# suivre la trajectoire du joueur. Limite a afficher : le niveau est corrige de
+# la difficulte de chaque match, PAS de la force du championnat (celle-ci
+# n'entre dans le score final que via l'ajustement "niveau") -- un 60 en
+# Equateur ne vaut pas un 60 en JPL.
+COULEUR_AUTRE_CONTEXTE = "#C27C2C"
+
+
+def lignes_forme_etendue(cle: tuple, competition: str) -> pd.DataFrame:
+    """Blocs de forme de la fiche et de toutes les saisons du joueur au meme
+    poste. contexte : fiche / meme (club + division) / autre."""
+    player_id, squad_id, iteration_id, position, arch = cle
+    b = requete("""SELECT t.*, s.season AS saison, s.competition, c.club, f.ajust_niveau
+        FROM fait_forme t
+        JOIN dim_saison s USING (iterationId)
+        JOIN dim_club c USING (squadId)
+        JOIN fait_joueur_saison f USING (playerId, squadId, iterationId, position, archetype)
+        WHERE t.playerId=? AND t.position=? AND t.archetype=?""", (player_id, position, arch))
+    fiche = (b["iterationId"] == iteration_id) & (b["squadId"] == squad_id)
+    meme = (b["squadId"] == squad_id) & (b["competition"] == competition) & ~fiche
+    b["contexte"] = ["fiche" if f else ("meme" if m else "autre") for f, m in zip(fiche, meme)]
+    return b
 
 
 def ouvrir_fiche(player_id, squad_id, iteration_id, position, arch) -> None:
@@ -511,32 +541,43 @@ def verdict_forme(d, blocs: pd.DataFrame) -> tuple[str, str]:
     return titre, phrase
 
 
-def graphe_forme(blocs: pd.DataFrame, iteration: int) -> go.Figure:
-    """Niveau par blocs de ~5 matchs. `blocs` : lignes_continuite('fait_forme').
-    Saison de la fiche en couleur, saisons continues en gris ; une courbe par
-    saison, jamais reliees : l'intersaison n'est pas une continuite de forme."""
-    b = (blocs.assign(fin=blocs["saison"].map(fin_saison))
-              .sort_values(["fin", "bloc"], ascending=[True, False]).reset_index(drop=True))
+def graphe_forme(blocs: pd.DataFrame) -> go.Figure:
+    """Niveau par blocs de ~5 matchs. `blocs` : lignes_forme_etendue (colonne contexte).
+    Une courbe par saison ET par club, jamais reliees : l'intersaison ou un
+    transfert n'est pas une continuite de forme. Couleur selon le contexte :
+    saison de la fiche (vert), meme club + division (gris), autre club et/ou
+    championnat (orange pointille, club indique)."""
+    style = {"fiche": (TEAL, "solid", "circle", 3),
+             "meme": (AUTRE_SAISON, "solid", "diamond", 2),
+             "autre": (COULEUR_AUTRE_CONTEXTE, "dot", "circle-open", 2)}
+    groupe = ["iterationId", "squadId"]
+    b = (blocs.assign(fin=blocs["saison"].map(fin_saison),
+                      _debut=blocs.groupby(groupe)["date_debut"].transform("min"))
+              .sort_values(["fin", "_debut", "bloc"], ascending=[True, True, False])
+              .reset_index(drop=True))
     b["x"] = range(len(b))
-    plusieurs = b["iterationId"].nunique() > 1
+    plusieurs = b.groupby(groupe).ngroups > 1
     fig = go.Figure()
     ticks = []
-    for it, g in b.groupby("iterationId", sort=False):
-        courante = it == iteration
-        saison = g["saison"].iloc[0]
-        couleur = TEAL if courante else AUTRE_SAISON
+    for _, g in b.groupby(groupe, sort=False):
+        contexte = g["contexte"].iloc[0]
+        courante = contexte == "fiche"
+        couleur, trait, symbole, epaisseur = style[contexte]
+        saison, club = g["saison"].iloc[0], g["club"].iloc[0]
+        club_court = club if len(club) <= 18 else club[:17] + "…"
+        libelle = f"{saison} · {club_court}" if contexte == "autre" else saison
         debut, fin = g["date_debut"].map(_date).tolist(), g["date_fin"].map(_date).tolist()
         ticks += [f"{a}<br>→ {z}" for a, z in zip(debut, fin)]
         fig.add_trace(go.Scatter(
             x=g["x"], y=g["performance"], mode="lines+markers+text", showlegend=False,
             text=g["performance"].round(0).astype(int), textposition="top center",
             textfont=dict(color=couleur),
-            line=dict(color=couleur, width=3 if courante else 2),
-            marker=dict(size=9 if courante else 7, color=couleur,
-                        symbol="circle" if courante else "diamond"),
-            customdata=[(saison, a, z, m, mi) for a, z, m, mi in
-                        zip(debut, fin, g["matchs"], g["minutes"])],
-            hovertemplate="Saison %{customdata[0]}<br>Du %{customdata[1]} au %{customdata[2]}<br>"
+            line=dict(color=couleur, width=epaisseur, dash=trait),
+            marker=dict(size=9 if courante else 8, color=couleur, symbol=symbole,
+                        line=dict(color=couleur, width=2)),
+            customdata=[(f"{saison} · {club} ({g['competition'].iloc[0]})", a, z, m, mi)
+                        for a, z, m, mi in zip(debut, fin, g["matchs"], g["minutes"])],
+            hovertemplate="%{customdata[0]}<br>Du %{customdata[1]} au %{customdata[2]}<br>"
                           "%{customdata[3]:.0f} matchs · %{customdata[4]:.0f} min<br>"
                           "Niveau <b>%{y:.0f}</b><extra></extra>"))
         # Reference = moyenne (ponderee en minutes) de SES blocs, pas le score de
@@ -549,14 +590,15 @@ def graphe_forme(blocs: pd.DataFrame, iteration: int) -> go.Figure:
         fig.add_trace(go.Scatter(
             x=[g["x"].min() - 0.4, g["x"].max() + 0.4], y=[niveau, niveau], mode="lines",
             hoverinfo="skip", line=dict(dash="dash", color=couleur, width=1.5),
-            name=(f"Moyenne des blocs {saison}"
+            name=(f"Moyenne des blocs {libelle}"
                   + (" (cette fiche)" if courante and plusieurs else "") + f" : {niveau:.0f}")))
         if plusieurs:
             if g["x"].min() > 0:
                 fig.add_vline(x=g["x"].min() - 0.5, line_color=GRIS, line_width=1)
             fig.add_annotation(x=(g["x"].min() + g["x"].max()) / 2, y=0.99, yref="paper",
-                               yanchor="top", showarrow=False, text=f"<b>{saison}</b>",
-                               font=dict(color=couleur, size=12))
+                               yanchor="top", showarrow=False,
+                               text=f"<b>{saison}</b>" + (f"<br>{club_court}" if contexte == "autre" else ""),
+                               font=dict(color=couleur, size=12 if contexte != "autre" else 11))
         recents = g[g["bloc"] <= 1]
         if courante and not recents.empty:
             fig.add_vrect(x0=recents["x"].min() - 0.5, x1=recents["x"].max() + 0.5,
@@ -661,15 +703,31 @@ def _texte_continuite(autres: list[str], saison_fiche: str, forme: str) -> str:
             f"Le verdict ci-dessus ne porte que sur la saison {saison_fiche}.")
 
 
-def section_forme(cle: tuple, d, piliers: pd.DataFrame, saison_fiche: str) -> None:
+def _texte_autre_contexte(tous: pd.DataFrame, d, saison_fiche: str) -> str:
+    """Mise en garde pour les saisons ajoutees dans un autre club et/ou championnat."""
+    autres = (tous[tous["contexte"] == "autre"].drop_duplicates(["iterationId", "squadId"])
+              .assign(fin=lambda x: x["saison"].map(fin_saison)).sort_values("fin"))
+    if autres.empty:
+        return ""
+    liste = ", ".join(f"{r.saison} à {r.club} ({r.competition})" for r in autres.itertuples())
+    reperes = ", ".join(f"{r.ajust_niveau:+.1f} en {r.saison} à {r.club}" for r in autres.itertuples())
+    return (f"  \n**En orange : {liste}**, au même poste mais dans un autre club et/ou un autre "
+            "championnat. ⚠️ Le niveau y est corrigé de la difficulté de chaque match, **pas de la "
+            "force du championnat** : un même chiffre ne vaut pas la même chose dans deux ligues de "
+            "force différente. Repère, l'ajustement « niveau » de son score (force du club et du "
+            f"championnat) : {d.ajust_niveau:+.1f} en {saison_fiche} ici, {reperes}. Les courbes ne "
+            "sont jamais reliées d'un club ou d'une saison à l'autre.")
+
+
+def section_forme(cle: tuple, d, piliers: pd.DataFrame, saison_fiche: str, competition: str) -> None:
     st.markdown("##### 📈 Évolution sur la saison")
     blocs = lignes_joueur("fait_forme", cle, "bloc")
     titre, phrase = verdict_forme(d, blocs)
     st.markdown(f"{titre}  \n{phrase}")
-    tous = lignes_continuite("fait_forme", cle, "bloc")
-    autres = autres_saisons(tous, cle[2])
+    tous = lignes_forme_etendue(cle, competition)
+    autres = sorted(tous.loc[tous["contexte"] == "meme", "saison"].unique(), key=fin_saison)
     if len(tous) >= 2:
-        st.plotly_chart(graphe_forme(tous, cle[2]), width="stretch", key=f"forme_{cle}")
+        st.plotly_chart(graphe_forme(tous), width="stretch", key=f"forme_{cle}")
         bloc = int(PARAMS["forme_bloc_minutes"])
         ecart = requete("""SELECT stddev(performance - moyenne) AS s FROM (
             SELECT performance, sum(performance * minutes) OVER w / sum(minutes) OVER w AS moyenne
@@ -691,9 +749,13 @@ def section_forme(cle: tuple, d, piliers: pd.DataFrame, saison_fiche: str) -> No
                       f"**{hausse.pilier}** ({hausse.progression:+.0f} pts de percentile) et "
                       f"**{baisse.pilier}** ({baisse.progression:+.0f}). Écarts bruts, encore plus "
                       "bruités que le niveau global : une piste à vérifier en vidéo, pas une conclusion.")
+        autre_contexte = _texte_autre_contexte(tous, d, saison_fiche)
         if autres:
-            texte += _texte_continuite(autres, saison_fiche,
+            texte += _texte_continuite(autres, saison_fiche, "" if autre_contexte else
                                        "Les courbes ne sont pas reliées d'une saison à l'autre. ")
+        texte += autre_contexte
+        if autre_contexte and not autres:
+            texte += f" Le verdict ci-dessus ne porte que sur la saison {saison_fiche}."
         st.caption(texte)
     elif not tous.empty:
         st.caption("Un seul bloc de matchs disponible : pas de courbe possible.")
@@ -742,14 +804,23 @@ def carte_joueur(j) -> None:
         for col, h in zip(c_[1:], autres.itertuples()):
             aide = f"{h.competition} · {h.poste} · {h.minutes:.0f} min"
             if h.continuite:
-                aide += " — même club, division et poste : intégrée aux graphes de cette fiche"
-            if col.button(f"{h.saison} · {h.club} · {h.score:.0f}{' ✓' if h.continuite else ''}",
+                aide += " — même club, division et poste : intégrée aux deux graphes de cette fiche"
+            elif h.courbe:
+                aide += " — même poste, autre club et/ou championnat : intégrée à la courbe Évolution"
+            marque = " ✓" if h.continuite else (" 📈" if h.courbe else "")
+            if col.button(f"{h.saison} · {h.club} · {h.score:.0f}{marque}",
                           key=f"saison_{cle}_{h.squadId}_{h.iterationId}_{h.position}",
                           width="stretch", help=aide):
                 ouvrir_fiche(h.playerId, h.squadId, h.iterationId, h.position, arch)
+        aides = []
         if autres["continuite"].any():
-            st.caption("✓ = même club, même division, même poste : ses matchs de cette saison-là "
-                       "sont ajoutés en gris aux graphes Évolution et Adversaires ci-dessous.")
+            aides.append("✓ = même club, même division, même poste : ajoutée en gris aux graphes "
+                         "Évolution et Adversaires")
+        if autres["courbe"].any():
+            aides.append("📈 = même poste mais autre club et/ou championnat : ajoutée en orange à la "
+                         "courbe Évolution seulement")
+        if aides:
+            st.caption(" · ".join(aides) + ".")
 
     k_ = st.columns(6)
     k_[0].metric("Score", n_(j.score), f"rang mondial {int(j.rang_mondial)}")
@@ -811,7 +882,7 @@ def carte_joueur(j) -> None:
     d = lignes_joueur("fait_joueur_saison", cle, "archetype").iloc[0]
     h1, h2 = st.columns(2)
     with h1:
-        section_forme(cle, d, piliers, j.saison)
+        section_forme(cle, d, piliers, j.saison, j.competition)
     with h2:
         section_adversaire(cle, d, j.saison)
 
@@ -841,14 +912,17 @@ def carte_joueur(j) -> None:
     with a2:
         st.markdown("**Historique du joueur**")
         if len(hist) > 1:
-            vue = hist.assign(fiche=["▶ affichée" if c else ("✓ dans les graphes" if k else "")
-                                     for c, k in zip(hist["courante"], hist["continuite"])])
+            vue = hist.assign(fiche=["▶ affichée" if c else ("✓ dans les 2 graphes" if k else
+                                                              ("📈 courbe Évolution" if b else ""))
+                                     for c, k, b in zip(hist["courante"], hist["continuite"],
+                                                        hist["courbe"])])
             st.dataframe(vue, hide_index=True, width="stretch",
                          column_order=["saison", "club", "competition", "poste", "score",
                                        "minutes", "fiche"])
-            st.caption("Saisons où il a assez joué à ce poste pour être évalué. Boutons "
+            st.caption("Saisons où il a assez joué pour être évalué à cet archétype. Boutons "
                        "« 📅 Ses autres saisons » en haut de la fiche pour les ouvrir. "
-                       "« ✓ dans les graphes » = même poste, même club, même division.")
+                       "« ✓ dans les 2 graphes » = même poste, club et division ; "
+                       "« 📈 courbe Évolution » = même poste, autre club et/ou championnat.")
         else:
             st.caption("Une seule saison évaluée à ce poste pour ce joueur.")
 
