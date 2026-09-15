@@ -187,6 +187,13 @@ def con_listes():
     c.execute("""CREATE TABLE IF NOT EXISTS listes (
         liste VARCHAR, playerId BIGINT, nom VARCHAR, club VARCHAR, poste VARCHAR,
         archetype VARCHAR, score DOUBLE PRECISION, ajoute_le TIMESTAMP)""")
+    # Filet de securite : une liste supprimee disparait pour tous les comptes,
+    # mais ses lignes sont d'abord copiees ici (qui, quand). Pas d'ecran de
+    # restauration : en cas d'erreur, on la recupere a la main depuis cette table.
+    c.execute("""CREATE TABLE IF NOT EXISTS listes_supprimees (
+        liste VARCHAR, playerId BIGINT, nom VARCHAR, club VARCHAR, poste VARCHAR,
+        archetype VARCHAR, score DOUBLE PRECISION, ajoute_le TIMESTAMP,
+        supprimee_le TIMESTAMP, supprimee_par VARCHAR)""")
     return c
 
 
@@ -319,11 +326,13 @@ res = requete(f"""
 # ----------------------------------------------------------------- fiche joueur
 n_ = lambda v, f="{:.1f}", d="—": (f.format(v) if pd.notna(v) else d)
 _date = lambda v: pd.Timestamp(v).strftime("%d/%m/%y") if pd.notna(v) else "?"
-TEAL, GRIS = "#1F6F6B", "#9AA5A4"
+TEAL, GRIS, AUTRE_SAISON = "#1F6F6B", "#9AA5A4", "#8C9A99"
 PALIERS = {"bas": "Bas de tableau", "milieu": "Milieu de tableau", "haut": "Top du championnat"}
 COULEUR_PALIER = {"bas": "#A9C9C6", "milieu": "#5F9E99", "haut": TEAL}
 NIVEAU_AIDE = ("**Niveau** = score de performance du poste : 50 = joueur médian, "
                "~67 = top 10 %, déjà corrigé de la difficulté de chaque match.")
+MISE_EN_PAGE = dict(height=340, margin=dict(l=50, r=10, t=40, b=50),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, font=dict(size=11)))
 
 
 def lignes_joueur(table: str, cle: tuple, ordre: str) -> pd.DataFrame:
@@ -332,8 +341,78 @@ def lignes_joueur(table: str, cle: tuple, ordre: str) -> pd.DataFrame:
         ORDER BY {ordre}""", cle)
 
 
+def fin_saison(valeur) -> int:
+    """'25/26' -> 2026, '2026' -> 2026 : meme regle que season_end_year de V8,
+    pour classer ensemble les deux formats de saison d'Impect."""
+    s = str(valeur).strip()
+    if "/" in s:
+        fin = s.split("/")[-1].strip()
+        if fin.isdigit():
+            return 2000 + int(fin) if len(fin) == 2 else int(fin)
+    return int(s[:4]) if s[:4].isdigit() else 0
+
+
+# --- Continuite entre saisons ------------------------------------------------
+# Les graphes Evolution et Adversaires ajoutent les AUTRES saisons du joueur
+# quand il y jouait au MEME poste, dans le MEME club et la MEME division.
+# Pourquoi c'est comparable : db_build.py score chaque archetype contre une
+# reference commune a toutes les saisons et tous les championnats, un niveau
+# 55 en 24/25 vaut donc un niveau 55 en 25/26. Pourquoi ces trois conditions :
+# un changement de club, de division ou de poste change le contexte (systeme,
+# adversite, role) et rendrait la courbe trompeuse. Le verdict affiche reste
+# celui de la saison de la fiche.
+def lignes_continuite(table: str, cle: tuple, ordre: str) -> pd.DataFrame:
+    """Lignes de `table` pour la saison de la fiche et les saisons continues."""
+    player_id, squad_id, iteration_id, position, arch = cle
+    return requete(f"""SELECT t.*, s.season AS saison, f.score_performance
+        FROM {table} t
+        JOIN dim_saison s USING (iterationId)
+        JOIN fait_joueur_saison f USING (playerId, squadId, iterationId, position, archetype)
+        WHERE t.playerId=? AND t.squadId=? AND t.position=? AND t.archetype=?
+          AND s.competition = (SELECT competition FROM dim_saison WHERE iterationId=?)
+        ORDER BY {ordre}""", (player_id, squad_id, position, arch, iteration_id))
+
+
+def autres_saisons(lignes: pd.DataFrame, iteration: int) -> list[str]:
+    s = lignes.loc[lignes["iterationId"] != iteration, "saison"].drop_duplicates()
+    return sorted(s, key=fin_saison)
+
+
+def historique(j, arch: str) -> pd.DataFrame:
+    """Toutes les saisons du joueur a cet archetype, la plus recente en tete."""
+    h = requete("""SELECT saison, club, competition, position AS poste, round(score,1) AS score,
+            minutes_jouees AS minutes, playerId, squadId, iterationId, position
+        FROM v_joueurs WHERE playerId=? AND archetype=?""", (int(j.playerId), arch))
+    h = (h.assign(fin=h["saison"].map(fin_saison))
+          .sort_values(["fin", "minutes"], ascending=False).reset_index(drop=True))
+    h["courante"] = ((h["iterationId"] == int(j.iterationId)) & (h["squadId"] == int(j.squadId))
+                     & (h["position"] == j.position))
+    h["continuite"] = ((h["squadId"] == int(j.squadId)) & (h["competition"] == j.competition)
+                       & (h["position"] == j.position) & ~h["courante"])
+    return h
+
+
+def ouvrir_fiche(player_id, squad_id, iteration_id, position, arch) -> None:
+    """Ouvre la fiche d'une autre saison. Le lien reste partageable (?fiche=...)."""
+    st.query_params["fiche"] = "~".join(
+        str(v) for v in (int(player_id), int(squad_id), int(iteration_id), position, arch))
+    st.rerun()
+
+
 def _vrai(v) -> bool:
     return pd.notna(v) and bool(v)
+
+
+def _legende_ligne(fig: go.Figure, nom: str, style: str, couleur: str) -> None:
+    """Ligne de reference nommee en legende : des etiquettes posees sur les
+    lignes se chevauchent des que deux valeurs sont proches."""
+    fig.add_trace(go.Scatter(x=[None], y=[None], mode="lines", name=nom,
+                             line=dict(dash=style, color=couleur, width=1.5)))
+
+
+def _mediane(fig: go.Figure) -> None:
+    fig.add_hline(y=50, line_dash="dot", line_color=GRIS, line_width=1.5)
+    _legende_ligne(fig, "Médiane du poste : 50", "dot", GRIS)
 
 
 def verdict_forme(d, blocs: pd.DataFrame) -> tuple[str, str]:
@@ -369,45 +448,69 @@ def verdict_forme(d, blocs: pd.DataFrame) -> tuple[str, str]:
     return titre, phrase
 
 
-def graphe_forme(blocs: pd.DataFrame, niveau_saison: float) -> go.Figure:
-    b = blocs.sort_values("bloc", ascending=False).reset_index(drop=True)   # ancien -> recent
-    x = list(range(len(b)))
-    debut, fin = b["date_debut"].map(_date).tolist(), b["date_fin"].map(_date).tolist()
-    fig = go.Figure(go.Scatter(
-        x=x, y=b["performance"], mode="lines+markers+text",
-        text=b["performance"].round(0).astype(int), textposition="top center",
-        line=dict(color=TEAL, width=3), marker=dict(size=9, color=TEAL),
-        customdata=list(zip(debut, fin, b["matchs"], b["minutes"])),
-        hovertemplate="Du %{customdata[0]} au %{customdata[1]}<br>"
-                      "%{customdata[2]:.0f} matchs · %{customdata[3]:.0f} min<br>"
-                      "Niveau <b>%{y:.0f}</b><extra></extra>"))
-    n_recents = int((b["bloc"] <= 1).sum())
-    if n_recents:
-        fig.add_vrect(x0=len(b) - n_recents - 0.5, x1=len(b) - 0.5, fillcolor=TEAL, opacity=0.08,
-                      line_width=0, annotation_text="~10 derniers matchs",
-                      annotation_position="top left")
-    _lignes_reference(fig, niveau_saison)
-    valeurs = b["performance"].tolist() + [niveau_saison, 50]
+def graphe_forme(blocs: pd.DataFrame, iteration: int) -> go.Figure:
+    """Niveau par blocs de ~5 matchs. `blocs` : lignes_continuite('fait_forme').
+    Saison de la fiche en couleur, saisons continues en gris ; une courbe par
+    saison, jamais reliees : l'intersaison n'est pas une continuite de forme."""
+    b = (blocs.assign(fin=blocs["saison"].map(fin_saison))
+              .sort_values(["fin", "bloc"], ascending=[True, False]).reset_index(drop=True))
+    b["x"] = range(len(b))
+    plusieurs = b["iterationId"].nunique() > 1
+    fig = go.Figure()
+    ticks = []
+    for it, g in b.groupby("iterationId", sort=False):
+        courante = it == iteration
+        saison = g["saison"].iloc[0]
+        couleur = TEAL if courante else AUTRE_SAISON
+        debut, fin = g["date_debut"].map(_date).tolist(), g["date_fin"].map(_date).tolist()
+        ticks += [f"{a}<br>→ {z}" for a, z in zip(debut, fin)]
+        fig.add_trace(go.Scatter(
+            x=g["x"], y=g["performance"], mode="lines+markers+text", showlegend=False,
+            text=g["performance"].round(0).astype(int), textposition="top center",
+            textfont=dict(color=couleur),
+            line=dict(color=couleur, width=3 if courante else 2),
+            marker=dict(size=9 if courante else 7, color=couleur,
+                        symbol="circle" if courante else "diamond"),
+            customdata=[(saison, a, z, m, mi) for a, z, m, mi in
+                        zip(debut, fin, g["matchs"], g["minutes"])],
+            hovertemplate="Saison %{customdata[0]}<br>Du %{customdata[1]} au %{customdata[2]}<br>"
+                          "%{customdata[3]:.0f} matchs · %{customdata[4]:.0f} min<br>"
+                          "Niveau <b>%{y:.0f}</b><extra></extra>"))
+        # Reference = moyenne (ponderee en minutes) de SES blocs, pas le score de
+        # saison : un bloc de ~5 matchs est calcule avec une confiance plus
+        # faible, donc tire vers la mediane. Mesure du 15/09/2026 sur toute la
+        # base : a 70 de niveau de saison, les blocs sont en moyenne 11 points
+        # plus bas ; a 20, 4 points plus hauts. Comparer les points au score de
+        # saison ferait croire que tout bon joueur sous-performe en permanence.
+        niveau = (g["performance"] * g["minutes"]).sum() / g["minutes"].sum()
+        fig.add_trace(go.Scatter(
+            x=[g["x"].min() - 0.4, g["x"].max() + 0.4], y=[niveau, niveau], mode="lines",
+            hoverinfo="skip", line=dict(dash="dash", color=couleur, width=1.5),
+            name=(f"Moyenne des blocs {saison}"
+                  + (" (cette fiche)" if courante and plusieurs else "") + f" : {niveau:.0f}")))
+        if plusieurs:
+            if g["x"].min() > 0:
+                fig.add_vline(x=g["x"].min() - 0.5, line_color=GRIS, line_width=1)
+            fig.add_annotation(x=(g["x"].min() + g["x"].max()) / 2, y=0.99, yref="paper",
+                               yanchor="top", showarrow=False, text=f"<b>{saison}</b>",
+                               font=dict(color=couleur, size=12))
+        recents = g[g["bloc"] <= 1]
+        if courante and not recents.empty:
+            fig.add_vrect(x0=recents["x"].min() - 0.5, x1=recents["x"].max() + 0.5,
+                          fillcolor=TEAL, opacity=0.08, line_width=0,
+                          annotation_text="~10 derniers matchs",
+                          annotation_position="bottom left" if plusieurs else "top left")
+    _mediane(fig)
+    valeurs = b["performance"].tolist() + [50]
+    if len(b) > 8:
+        # Au-dela de 8 blocs, "debut -> fin" deborde sous l'axe : date de debut
+        # seule (l'annee se lit dans l'etiquette de saison, la periode au survol).
+        ticks = [t.split("<br>")[0] for t in ticks]
     fig.update_layout(**MISE_EN_PAGE,
-                      xaxis=dict(tickvals=x, ticktext=[f"{a}<br>→ {z}" for a, z in zip(debut, fin)],
-                                 zeroline=False),
-                      yaxis=dict(title="Niveau", range=[max(0, min(valeurs) - 12), max(valeurs) + 12]))
+                      xaxis=dict(tickvals=b["x"].tolist(), ticktext=ticks, zeroline=False,
+                                 tickfont=dict(size=10 if len(b) > 8 else 12)),
+                      yaxis=dict(title="Niveau", range=[max(0, min(valeurs) - 12), max(valeurs) + 14]))
     return fig
-
-
-MISE_EN_PAGE = dict(height=340, margin=dict(l=50, r=10, t=40, b=50),
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, font=dict(size=11)))
-
-
-def _lignes_reference(fig: go.Figure, niveau_saison: float) -> None:
-    """Niveau de saison et mediane du poste, nommes en legende : des etiquettes
-    posees sur les lignes se chevauchent des que les deux valeurs sont proches."""
-    fig.update_traces(showlegend=False)
-    for y, nom, style, couleur in ((niveau_saison, f"Sa saison : {niveau_saison:.0f}", "dash", TEAL),
-                                   (50, "Médiane du poste : 50", "dot", GRIS)):
-        fig.add_hline(y=y, line_dash=style, line_color=couleur, line_width=1.5)
-        fig.add_trace(go.Scatter(x=[None], y=[None], mode="lines", name=nom,
-                                 line=dict(dash=style, color=couleur, width=1.5)))
 
 
 def verdict_adversaire(d, paliers: pd.DataFrame) -> tuple[str, str]:
@@ -438,42 +541,85 @@ def verdict_adversaire(d, paliers: pd.DataFrame) -> tuple[str, str]:
     return titre, phrase
 
 
-def graphe_adversaire(paliers: pd.DataFrame, niveau_saison: float) -> go.Figure:
-    p = paliers.set_index("palier")
-    ok = [k in p.index for k in PALIERS]
-    perf = [p.loc[k, "performance"] if o else 0 for k, o in zip(PALIERS, ok)]
-    fig = go.Figure(go.Bar(
-        x=list(PALIERS.values()), y=perf,
-        marker_color=[COULEUR_PALIER[k] if o else "#E3E7E6" for k, o in zip(PALIERS, ok)],
-        text=[f"<b>{p.loc[k, 'performance']:.0f}</b><br>{p.loc[k, 'matchs']:.0f} matchs" if o
-              else "trop peu<br>de matchs" for k, o in zip(PALIERS, ok)],
-        textposition="outside", cliponaxis=False,
-        customdata=[(p.loc[k, "minutes"], p.loc[k, "percentile"]) if o else (0, 0)
-                    for k, o in zip(PALIERS, ok)],
-        hovertemplate="%{x}<br>%{customdata[0]:.0f} min<br>Niveau <b>%{y:.0f}</b> "
-                      "(mieux que %{customdata[1]:.0f} % du poste)<extra></extra>"))
-    _lignes_reference(fig, niveau_saison)
-    fig.update_layout(**MISE_EN_PAGE,
-                      yaxis=dict(title="Niveau", range=[0, max(perf + [niveau_saison, 50]) + 20]))
+def graphe_adversaire(paliers: pd.DataFrame, iteration: int, niveau_saison: float) -> go.Figure:
+    """Niveau par palier d'adversaire. `paliers` : lignes_continuite('fait_adversaire').
+    Une serie de barres par saison, la saison de la fiche en couleur, les
+    saisons continues en gris hache."""
+    saisons_ = (paliers[["iterationId", "saison"]].drop_duplicates()
+                .assign(fin=lambda s: s["saison"].map(fin_saison)).sort_values("fin"))
+    plusieurs = len(saisons_) > 1
+    fig = go.Figure()
+    hauteurs = [niveau_saison, 50]
+    for it, saison in zip(saisons_["iterationId"], saisons_["saison"]):
+        p = paliers[paliers["iterationId"] == it].set_index("palier")
+        courante = it == iteration
+        ok = [k in p.index for k in PALIERS]
+        perf = [float(p.loc[k, "performance"]) if o else (0.0 if courante else None)
+                for k, o in zip(PALIERS, ok)]
+        if courante:
+            couleurs = [(TEAL if plusieurs else COULEUR_PALIER[k]) if o else "#E3E7E6"
+                        for k, o in zip(PALIERS, ok)]
+        else:
+            couleurs = AUTRE_SAISON
+        hauteurs += [v for v in perf if v]
+        fig.add_trace(go.Bar(
+            x=list(PALIERS.values()), y=perf, marker_color=couleurs,
+            marker_pattern_shape="" if courante else "/",
+            name=f"{saison} (cette fiche)" if courante else f"{saison} · même club, même division",
+            showlegend=plusieurs,
+            text=[f"<b>{p.loc[k, 'performance']:.0f}</b><br>{p.loc[k, 'matchs']:.0f} matchs" if o
+                  else ("trop peu<br>de matchs" if courante else "") for k, o in zip(PALIERS, ok)],
+            textposition="outside", cliponaxis=False, textfont=dict(size=10 if plusieurs else 12),
+            customdata=[(saison, p.loc[k, "minutes"], p.loc[k, "percentile"]) if o else (saison, 0, 0)
+                        for k, o in zip(PALIERS, ok)],
+            hovertemplate="Saison %{customdata[0]} · %{x}<br>%{customdata[1]:.0f} min<br>"
+                          "Niveau <b>%{y:.0f}</b> (mieux que %{customdata[2]:.0f} % du poste)"
+                          "<extra></extra>"))
+    # Reference = moyenne (ponderee en minutes) des paliers de la saison de la
+    # fiche, pas son score de saison : meme biais que les blocs de forme (moins
+    # de matchs par palier -> tire vers la mediane ; mesure du 15/09/2026 : -10
+    # points a 70 de niveau de saison, +4 a 20).
+    courante = paliers[paliers["iterationId"] == iteration]
+    if not courante.empty:
+        moyenne = (courante["performance"] * courante["minutes"]).sum() / courante["minutes"].sum()
+        fig.add_hline(y=moyenne, line_dash="dash", line_color=TEAL, line_width=1.5)
+        _legende_ligne(fig, f"Moyenne de ses paliers {courante['saison'].iloc[0]} : {moyenne:.0f}",
+                       "dash", TEAL)
+    _mediane(fig)
+    fig.update_layout(**MISE_EN_PAGE, barmode="group",
+                      yaxis=dict(title="Niveau", range=[0, max(hauteurs) + 20]))
     return fig
 
 
-def section_forme(cle: tuple, d, piliers: pd.DataFrame) -> None:
+def _texte_continuite(autres: list[str], saison_fiche: str, forme: str) -> str:
+    return (f"  \n**En gris : saison{'s' if len(autres) > 1 else ''} {', '.join(autres)}**, "
+            f"où il jouait aussi à ce poste, dans ce club et cette division. Même échelle de niveau "
+            f"(référence commune à toutes les saisons), donc directement comparable. {forme}"
+            f"Le verdict ci-dessus ne porte que sur la saison {saison_fiche}.")
+
+
+def section_forme(cle: tuple, d, piliers: pd.DataFrame, saison_fiche: str) -> None:
     st.markdown("##### 📈 Évolution sur la saison")
     blocs = lignes_joueur("fait_forme", cle, "bloc")
     titre, phrase = verdict_forme(d, blocs)
     st.markdown(f"{titre}  \n{phrase}")
-    if len(blocs) >= 2:
-        st.plotly_chart(graphe_forme(blocs, d.score_performance), width="stretch", key=f"forme_{cle}")
+    tous = lignes_continuite("fait_forme", cle, "bloc")
+    autres = autres_saisons(tous, cle[2])
+    if len(tous) >= 2:
+        st.plotly_chart(graphe_forme(tous, cle[2]), width="stretch", key=f"forme_{cle}")
         bloc = int(PARAMS["forme_bloc_minutes"])
-        ecart = requete("""SELECT stddev(b.performance - f.score_performance) AS s
-            FROM fait_forme b JOIN fait_joueur_saison f
-            USING (playerId, squadId, iterationId, position, archetype)
-            WHERE b.archetype = ?""", (cle[-1],))["s"].iloc[0]
+        ecart = requete("""SELECT stddev(performance - moyenne) AS s FROM (
+            SELECT performance, sum(performance * minutes) OVER w / sum(minutes) OVER w AS moyenne
+            FROM fait_forme WHERE archetype = ?
+            WINDOW w AS (PARTITION BY playerId, squadId, iterationId, position))""",
+                        (cle[-1],))["s"].iloc[0]
         texte = (f"{NIVEAU_AIDE} Chaque point = un bloc d'environ {bloc} min "
                  f"(~{bloc // 90} matchs pleins), du plus ancien à gauche au plus récent à droite. "
-                 f"Un bloc s'écarte en moyenne de ±{ecart:.0f} points du niveau de saison sans que "
-                 "rien ne change vraiment : c'est la **tendance** qui compte, pas un point isolé.")
+                 f"Un bloc s'écarte en moyenne de ±{ecart:.0f} points de la moyenne de ses blocs sans "
+                 "que rien ne change vraiment : c'est la **tendance** qui compte, pas un point isolé. "
+                 f"La ligne en tirets est cette moyenne, pas son score de saison "
+                 f"({d.score_performance:.0f}) : calculé sur ~5 matchs seulement, un bloc est "
+                 "mécaniquement tiré vers 50, on le compare donc à ses pareils.")
         mouv = piliers.dropna(subset=["progression"])
         if not mouv.empty and pd.notna(d.progression):
             hausse = mouv.loc[mouv["progression"].idxmax()]
@@ -482,23 +628,33 @@ def section_forme(cle: tuple, d, piliers: pd.DataFrame) -> None:
                       f"**{hausse.pilier}** ({hausse.progression:+.0f} pts de percentile) et "
                       f"**{baisse.pilier}** ({baisse.progression:+.0f}). Écarts bruts, encore plus "
                       "bruités que le niveau global : une piste à vérifier en vidéo, pas une conclusion.")
+        if autres:
+            texte += _texte_continuite(autres, saison_fiche,
+                                       "Les courbes ne sont pas reliées d'une saison à l'autre. ")
         st.caption(texte)
-    elif not blocs.empty:
+    elif not tous.empty:
         st.caption("Un seul bloc de matchs disponible : pas de courbe possible.")
 
 
-def section_adversaire(cle: tuple, d) -> None:
+def section_adversaire(cle: tuple, d, saison_fiche: str) -> None:
     st.markdown("##### 🆚 Selon le niveau de l'adversaire")
     paliers = lignes_joueur("fait_adversaire", cle, "ordre")
     titre, phrase = verdict_adversaire(d, paliers)
     st.markdown(f"{titre}  \n{phrase}")
-    if not paliers.empty:
-        st.plotly_chart(graphe_adversaire(paliers, d.score_performance), width="stretch",
+    tous = lignes_continuite("fait_adversaire", cle, "ordre")
+    if not tous.empty:
+        st.plotly_chart(graphe_adversaire(tous, cle[2], d.score_performance), width="stretch",
                         key=f"adv_{cle}")
-        st.caption(f"{NIVEAU_AIDE} Paliers = tiers des adversaires selon leur rating Impect à la "
-                   "date du match, dans ce championnat. La difficulté étant déjà compensée, un 50 "
-                   "face au top vaut un joueur médian du poste. Peu de matchs par palier : "
-                   "c'est une tendance, pas une preuve.")
+        texte = (f"{NIVEAU_AIDE} Paliers = tiers des adversaires selon leur rating Impect à la "
+                 "date du match, dans ce championnat. La difficulté étant déjà compensée, un 50 "
+                 "face au top vaut un joueur médian du poste. Peu de matchs par palier : "
+                 "c'est une tendance, pas une preuve. La ligne en tirets est la moyenne de ses "
+                 f"paliers, pas son score de saison ({d.score_performance:.0f}) : calculé sur moins "
+                 "de matchs, un palier est mécaniquement tiré vers 50, on le compare donc à ses pareils.")
+        autres = autres_saisons(tous, cle[2])
+        if autres:
+            texte += _texte_continuite(autres, saison_fiche, "Barres grises hachurées. ")
+        st.caption(texte)
 
 
 def carte_joueur(j) -> None:
@@ -512,6 +668,25 @@ def carte_joueur(j) -> None:
         lieu += f" ({j.pays}" + (f", D{int(j.niveau)})" if pd.notna(j.niveau) else ")")
     st.caption(f"{lieu} · {j.saison} · {j.poste}" + (f" ({j.side})" if pd.notna(j.side) else "")
                + f" · archétype {arch}")
+
+    # Acces direct aux fiches des autres saisons (seules existent celles ou il
+    # a assez joue a ce poste pour etre evalue par la pipeline).
+    hist = historique(j, arch)
+    autres = hist[~hist["courante"]].head(5)
+    if not autres.empty:
+        c_ = st.columns([1.1] + [1] * len(autres) + [max(0.1, 5 - len(autres))])
+        c_[0].markdown("**📅 Ses autres saisons :**")
+        for col, h in zip(c_[1:], autres.itertuples()):
+            aide = f"{h.competition} · {h.poste} · {h.minutes:.0f} min"
+            if h.continuite:
+                aide += " — même club, division et poste : intégrée aux graphes de cette fiche"
+            if col.button(f"{h.saison} · {h.club} · {h.score:.0f}{' ✓' if h.continuite else ''}",
+                          key=f"saison_{cle}_{h.squadId}_{h.iterationId}_{h.position}",
+                          width="stretch", help=aide):
+                ouvrir_fiche(h.playerId, h.squadId, h.iterationId, h.position, arch)
+        if autres["continuite"].any():
+            st.caption("✓ = même club, même division, même poste : ses matchs de cette saison-là "
+                       "sont ajoutés en gris aux graphes Évolution et Adversaires ci-dessous.")
 
     k_ = st.columns(6)
     k_[0].metric("Score", n_(j.score), f"rang mondial {int(j.rang_mondial)}")
@@ -533,6 +708,8 @@ def carte_joueur(j) -> None:
                  help="Il ne sera plus proposé dans les recherches par poste."):
         ajouter("exclus", j); st.toast(f"{j.nom} exclu"); st.rerun()
     if b3.button(f"🏟️ Effectif de {j.club}", width="stretch", key=f"clu_{cle}"):
+        if "fiche" in st.query_params:
+            del st.query_params["fiche"]
         st.query_params["club"] = f"{int(j.squadId)}-{int(j.iterationId)}"
         st.rerun()
 
@@ -571,9 +748,9 @@ def carte_joueur(j) -> None:
     d = lignes_joueur("fait_joueur_saison", cle, "archetype").iloc[0]
     h1, h2 = st.columns(2)
     with h1:
-        section_forme(cle, d, piliers)
+        section_forme(cle, d, piliers, j.saison)
     with h2:
-        section_adversaire(cle, d)
+        section_adversaire(cle, d, j.saison)
 
     met = requete("""SELECT metrique, pilier, valeur_brute, z FROM fait_metrique
         WHERE playerId=? AND squadId=? AND iterationId=? AND position=? AND archetype=?
@@ -588,25 +765,29 @@ def carte_joueur(j) -> None:
                      hide_index=True, width="stretch")
 
     a1, a2 = st.columns(2)
-    autres = requete("""SELECT archetype, round(score,1) AS score, rang_archetype AS rang
+    autres_arch = requete("""SELECT archetype, round(score,1) AS score, rang_archetype AS rang
         FROM fait_joueur_saison
         WHERE playerId=? AND squadId=? AND iterationId=? AND position=? AND archetype<>?
         ORDER BY score DESC""", cle)
     with a1:
         st.markdown("**Autres archétypes de ce poste**")
-        if not autres.empty:
-            st.dataframe(autres, hide_index=True, width="stretch")
+        if not autres_arch.empty:
+            st.dataframe(autres_arch, hide_index=True, width="stretch")
         else:
             st.caption("Ce poste ne correspond qu'à un seul archétype.")
-    hist = requete("""SELECT saison, competition, round(score,1) AS score, minutes_jouees AS minutes
-        FROM v_joueurs WHERE playerId=? AND archetype=? ORDER BY saison""",
-                   (int(j.playerId), arch))
     with a2:
         st.markdown("**Historique du joueur**")
         if len(hist) > 1:
-            st.dataframe(hist, hide_index=True, width="stretch")
+            vue = hist.assign(fiche=["▶ affichée" if c else ("✓ dans les graphes" if k else "")
+                                     for c, k in zip(hist["courante"], hist["continuite"])])
+            st.dataframe(vue, hide_index=True, width="stretch",
+                         column_order=["saison", "club", "competition", "poste", "score",
+                                       "minutes", "fiche"])
+            st.caption("Saisons où il a assez joué à ce poste pour être évalué. Boutons "
+                       "« 📅 Ses autres saisons » en haut de la fiche pour les ouvrir. "
+                       "« ✓ dans les graphes » = même poste, même club, même division.")
         else:
-            st.caption("Une seule saison disponible pour ce joueur.")
+            st.caption("Une seule saison évaluée à ce poste pour ce joueur.")
 
 
 CHAMPS = """nom, club, competition, pays, niveau, saison, round(score,1) AS score,
@@ -623,9 +804,31 @@ CHAMPS = """nom, club, competition, pays, niveau, saison, round(score,1) AS scor
     round(gros_matchs_delta,1) AS gros_matchs_delta, archetype AS archetype_courant,
     playerId, squadId, iterationId, position"""
 
-# ----------------------------------------------------------------- vue club
 club_param = st.query_params.get("club")
-if club_param:
+fiche_param = st.query_params.get("fiche")
+
+# ----------------------------------------------------------------- vue fiche
+# Ouverte depuis "Ses autres saisons" : prime sur la vue club et la recherche,
+# le bouton retour ramene la ou l'on etait (effectif du club ou recherche).
+if fiche_param:
+    try:
+        _p, _s, _i, _pos, _a = fiche_param.split("~")
+        cle_fiche = (int(_p), int(_s), int(_i), _pos, _a)
+    except ValueError:
+        cle_fiche = None
+    ligne = (requete(f"""SELECT {CHAMPS} FROM v_joueurs
+        WHERE playerId=? AND squadId=? AND iterationId=? AND position=? AND archetype=?""", cle_fiche)
+             if cle_fiche else pd.DataFrame())
+    if st.button("← Retour à l'effectif" if club_param else "← Retour à la recherche"):
+        del st.query_params["fiche"]
+        st.rerun()
+    if ligne.empty:
+        st.error("Fiche introuvable : le lien vient peut-être d'avant une mise à jour des données.")
+    else:
+        carte_joueur(ligne.iloc[0])
+
+# ----------------------------------------------------------------- vue club
+elif club_param:
     squad_id, iter_id = (int(x) for x in club_param.split("-"))
     entete = requete("""SELECT club, competition, saison, pays, niveau,
             round(club_rating,3) AS rating, count(*) AS lignes
