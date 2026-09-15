@@ -251,16 +251,79 @@ def retirer(liste: str, player_id: int) -> None:
     sql_listes("DELETE FROM listes WHERE liste=? AND playerId=?", [liste, int(player_id)])
 
 
+def renommer_liste(ancien: str, nouveau: str) -> str | None:
+    """Renomme une shortlist pour TOUS les comptes. Renvoie le motif du refus, sinon None.
+
+    Refuse un nom deja pris (casse ignoree) plutot que de fusionner : deux
+    listes melangees sans le vouloir ne se demelent plus.
+    """
+    nouveau = nouveau.strip()
+    if not nouveau:
+        return "Le nom ne peut pas être vide."
+    if nouveau.casefold() == "exclus":
+        return "« exclus » est réservé à la liste des joueurs exclus."
+    if nouveau == ancien:
+        return None
+    if any(n.casefold() == nouveau.casefold() and n != ancien for n in listes_noms()):
+        return f"Une liste « {nouveau} » existe déjà : choisis un autre nom."
+    sql_listes("UPDATE listes SET liste=? WHERE liste=?", [nouveau, ancien])
+    return None
+
+
+def supprimer_liste(liste: str, par: str) -> None:
+    """Supprime une shortlist pour TOUS les comptes, apres l'avoir archivee
+    dans listes_supprimees (cf. con_listes)."""
+    sql_listes("""INSERT INTO listes_supprimees
+        SELECT liste, playerId, nom, club, poste, archetype, score, ajoute_le,
+               now(), CAST(? AS VARCHAR)
+        FROM listes WHERE liste=?""", [par, liste])
+    sql_listes("DELETE FROM listes WHERE liste=?", [liste])
+
+
 st.sidebar.markdown("**Listes**")
 if not LISTES_URL and "/mount/src" in str(_ICI):
     st.sidebar.warning("⚠️ Listes **non durables** : elles seront effacées à la prochaine "
                        "publication ou au prochain redémarrage. Ajoute la section "
                        "`[listes]` dans Settings → Secrets.")
+if _message := st.session_state.pop("_message_listes", None):
+    st.toast(_message)
+NOUVELLE_LISTE = "➕ nouvelle liste…"
 _noms = listes_noms()
-shortlist = st.sidebar.selectbox("Shortlist active", _noms + ["➕ nouvelle liste…"],
-                                 index=0 if _noms else len(_noms))
-if shortlist == "➕ nouvelle liste…":
+_options = _noms + [NOUVELLE_LISTE]
+# Un widget deja affiche ne peut plus etre modifie : apres un renommage ou une
+# suppression, la liste a selectionner est appliquee au rerun suivant, avant
+# de recreer le selecteur.
+if "_liste_suivante" in st.session_state:
+    st.session_state["shortlist_active"] = st.session_state.pop("_liste_suivante")
+# Liste renommee ou supprimee entre-temps, par ce compte ou un autre : on
+# retombe sur la premiere liste au lieu de planter.
+if st.session_state.get("shortlist_active") not in _options:
+    st.session_state.pop("shortlist_active", None)
+shortlist = st.sidebar.selectbox("Shortlist active", _options, key="shortlist_active")
+if shortlist == NOUVELLE_LISTE:
     shortlist = st.sidebar.text_input("Nom de la nouvelle liste", value="Shortlist") or "Shortlist"
+else:
+    with st.sidebar.expander("⚙️ Gérer la liste"):
+        st.caption("Les changements s'appliquent à **tous les comptes**.")
+        nouveau_nom = st.text_input("Nouveau nom", value=shortlist, key=f"nouveau_nom_{shortlist}")
+        if st.button("✏️ Renommer", key=f"renommer_{shortlist}", width="stretch"):
+            erreur = renommer_liste(shortlist, nouveau_nom)
+            if erreur:
+                st.error(erreur)
+            elif nouveau_nom.strip() != shortlist:
+                st.session_state["_liste_suivante"] = nouveau_nom.strip()
+                st.session_state["_message_listes"] = (f"« {shortlist} » renommée en "
+                                                       f"« {nouveau_nom.strip()} »")
+                st.rerun()
+        _n = len(contenu(shortlist))
+        confirme = st.checkbox(f"Oui, supprimer « {shortlist} » ({_n} joueur{'s' if _n > 1 else ''}) "
+                               "pour tous les comptes", key=f"confirmer_{shortlist}")
+        if st.button("🗑️ Supprimer définitivement", key=f"supprimer_{shortlist}",
+                     disabled=not confirme, width="stretch"):
+            supprimer_liste(shortlist, st.session_state["connecte"])
+            st.session_state["_liste_suivante"] = ""          # -> premiere liste restante
+            st.session_state["_message_listes"] = f"« {shortlist} » supprimée pour tous les comptes"
+            st.rerun()
 masquer_exclus = st.sidebar.checkbox("Masquer les joueurs exclus", value=True)
 
 st.sidebar.markdown("**Profil**")
