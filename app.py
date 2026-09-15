@@ -22,6 +22,7 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 _ICI = Path(__file__).resolve().parent
@@ -39,27 +40,31 @@ st.set_page_config(page_title="Scouting Impect — Charleroi", page_icon="🦓",
 # ----------------------------------------------------------------- acces
 # Comptes definis dans .streamlit/secrets.toml (mots de passe en SHA-256,
 # jamais en clair). Une connexion par session de navigateur.
-def _comptes() -> dict:
-    """Comptes lus depuis st.secrets, sinon depuis un secrets.toml voisin.
+def _secret(section: str) -> dict:
+    """Section des secrets lue depuis st.secrets, sinon depuis un secrets.toml voisin.
 
     st.secrets ne cherche que dans le dossier courant et le dossier personnel :
     lancer l'app depuis un autre repertoire suffit a ne plus voir les comptes.
     On retombe donc sur les emplacements relatifs au fichier app.py.
     """
     try:
-        comptes = dict(st.secrets.get("utilisateurs", {}))
-        if comptes:
-            return comptes
+        valeurs = dict(st.secrets.get(section, {}))
+        if valeurs:
+            return valeurs
     except Exception:
         pass
     for dossier in (_ICI, _ICI.parent):
         f = dossier / ".streamlit" / "secrets.toml"
         if f.exists():
             try:
-                return dict(tomllib.loads(f.read_text(encoding="utf-8"))["utilisateurs"])
+                return dict(tomllib.loads(f.read_text(encoding="utf-8"))[section])
             except Exception:
                 continue
     return {}
+
+
+def _comptes() -> dict:
+    return _secret("utilisateurs")
 
 
 def _mot_de_passe_ok(utilisateur: str, mot_de_passe: str) -> bool:
@@ -119,11 +124,14 @@ def listes():
     comp = requete("""SELECT competition, pays, niveau, top5_europe
                       FROM dim_competition ORDER BY rating_moyen DESC""")
     saisons = requete("SELECT DISTINCT season FROM dim_saison ORDER BY season DESC")["season"].tolist()
-    maj = requete("SELECT genere_le FROM parametres")["genere_le"].iloc[0]
-    return comp, saisons, maj
+    # Constantes du run (seuils, fiabilite...) : les phrases de la fiche les
+    # citent, elles ne doivent pas diverger de Charleroi_MultiPoste_ScoreV8.py.
+    params = requete("SELECT * FROM parametres").iloc[0]
+    return comp, saisons, params
 
 
-comp_df, saisons, genere_le = listes()
+comp_df, saisons, PARAMS = listes()
+genere_le = PARAMS["genere_le"]
 
 # ----------------------------------------------------------------- filtres
 st.sidebar.title("🦓 Scouting Impect")
@@ -147,49 +155,100 @@ niveaux = st.sidebar.multiselect("Niveau de division", [1, 2, 3, 4, 5],
                                  help="1 = première division. Vide = tous, y compris les non renseignés.")
 
 # ------------------------------------------------------- shortlists / exclusions
-# Base separee, en ecriture : la base de scoring reste ouverte en lecture seule
-# et est ecrasee a chaque db_build.py, les listes doivent lui survivre.
-# Surchargeable par la variable d'environnement SCOUTING_LISTES_DB : les tests
-# automatises ecrivent ainsi dans un fichier temporaire, jamais dans le tien.
+# Les listes ne doivent survivre ni a db_build.py (qui ecrase la base de
+# scoring) ni a Streamlit Cloud, dont le disque est EFFACE a chaque publication
+# et a chaque redemarrage : un fichier a cote de app.py y est perdu a coup sur.
+# Elles vivent donc dans une base Postgres hebergee (Neon, gratuit), dont
+# l'adresse est dans les secrets, section [listes] cle url. Sans adresse, repli
+# sur shortlists.duckdb : durable sur ton PC, jamais en ligne.
+# SCOUTING_LISTES_DB force le fichier local (les tests automatises ecrivent
+# ainsi dans un fichier temporaire, jamais dans la vraie base) ;
+# SCOUTING_LISTES_URL force une adresse Postgres.
 LISTES_DB = Path(os.environ.get("SCOUTING_LISTES_DB", DB.parent / "shortlists.duckdb"))
+LISTES_URL = ("" if "SCOUTING_LISTES_DB" in os.environ
+              else os.environ.get("SCOUTING_LISTES_URL") or _secret("listes").get("url", ""))
 
 
 @st.cache_resource
 def con_listes():
-    c = duckdb.connect(str(LISTES_DB))
+    if LISTES_URL:
+        import psycopg
+        try:
+            c = psycopg.connect(LISTES_URL, autocommit=True, connect_timeout=20)
+        except psycopg.Error as e:
+            # Echec bruyant, sans repli sur un fichier local : un ajout qui
+            # semblerait reussir puis disparaitrait au redemarrage est pire.
+            st.error(f"Base des shortlists injoignable ({type(e).__name__}). "
+                     "Réessaie dans une minute ; si ça persiste, vérifie l'adresse "
+                     "[listes] url dans les secrets.")
+            st.stop()
+    else:
+        c = duckdb.connect(str(LISTES_DB))
     c.execute("""CREATE TABLE IF NOT EXISTS listes (
         liste VARCHAR, playerId BIGINT, nom VARCHAR, club VARCHAR, poste VARCHAR,
-        archetype VARCHAR, score DOUBLE, ajoute_le TIMESTAMP)""")
+        archetype VARCHAR, score DOUBLE PRECISION, ajoute_le TIMESTAMP)""")
     return c
 
 
+def sql_listes(sql: str, params: list = ()) -> list[tuple]:
+    """Execute une requete sur la base des listes et renvoie ses lignes.
+
+    Meme SQL pour DuckDB et Postgres, seul le marqueur de parametre change.
+    Neon coupe les connexions inactives apres quelques minutes : si la
+    connexion en cache est morte, on la rouvre et on rejoue une fois.
+    """
+    if not LISTES_URL:
+        cur = con_listes().execute(sql, params)
+        return cur.fetchall() if cur.description else []
+    import psycopg
+    sql = sql.replace("?", "%s")
+    for essai in (1, 2):
+        c = con_listes()
+        try:
+            if c.closed:
+                raise psycopg.OperationalError("connexion fermee")
+            cur = c.execute(sql, params)
+            return cur.fetchall() if cur.description else []
+        except (psycopg.OperationalError, psycopg.InterfaceError):
+            con_listes.clear()
+            if essai == 2:
+                raise
+
+
+_txt = lambda v: None if pd.isna(v) else str(v)
+
+
 def listes_noms() -> list[str]:
-    return [r[0] for r in con_listes().execute(
-        "SELECT DISTINCT liste FROM listes WHERE liste <> 'exclus' ORDER BY liste").fetchall()]
+    return [r[0] for r in sql_listes(
+        "SELECT DISTINCT liste FROM listes WHERE liste <> 'exclus' ORDER BY liste")]
 
 
 def contenu(liste: str) -> pd.DataFrame:
-    return con_listes().execute(
+    return pd.DataFrame(sql_listes(
         "SELECT nom, club, poste, archetype, score, playerId FROM listes WHERE liste=? ORDER BY score DESC",
-        [liste]).df()
+        [liste]), columns=["nom", "club", "poste", "archetype", "score", "playerId"])
 
 
 def ids_exclus() -> list[int]:
-    return [r[0] for r in con_listes().execute(
-        "SELECT DISTINCT playerId FROM listes WHERE liste='exclus'").fetchall()]
+    return [r[0] for r in sql_listes("SELECT DISTINCT playerId FROM listes WHERE liste='exclus'")]
 
 
 def ajouter(liste: str, j) -> None:
-    con_listes().execute("DELETE FROM listes WHERE liste=? AND playerId=?", [liste, int(j.playerId)])
-    con_listes().execute("INSERT INTO listes VALUES (?,?,?,?,?,?,?,now())",
-                         [liste, int(j.playerId), j.nom, j.club, j.poste, j.archetype_courant, float(j.score)])
+    sql_listes("DELETE FROM listes WHERE liste=? AND playerId=?", [liste, int(j.playerId)])
+    sql_listes("INSERT INTO listes VALUES (?,?,?,?,?,?,?,now())",
+               [liste, int(j.playerId), _txt(j.nom), _txt(j.club), _txt(j.poste),
+                _txt(j.archetype_courant), None if pd.isna(j.score) else float(j.score)])
 
 
 def retirer(liste: str, player_id: int) -> None:
-    con_listes().execute("DELETE FROM listes WHERE liste=? AND playerId=?", [liste, int(player_id)])
+    sql_listes("DELETE FROM listes WHERE liste=? AND playerId=?", [liste, int(player_id)])
 
 
 st.sidebar.markdown("**Listes**")
+if not LISTES_URL and "/mount/src" in str(_ICI):
+    st.sidebar.warning("⚠️ Listes **non durables** : elles seront effacées à la prochaine "
+                       "publication ou au prochain redémarrage. Ajoute la section "
+                       "`[listes]` dans Settings → Secrets.")
 _noms = listes_noms()
 shortlist = st.sidebar.selectbox("Shortlist active", _noms + ["➕ nouvelle liste…"],
                                  index=0 if _noms else len(_noms))
@@ -245,7 +304,7 @@ res = requete(f"""
            round(age_years,1) AS age, minutes_jouees AS minutes, pied_fort,
            round(score_performance,1) AS performance, round(ajust_niveau,1) AS aj_niveau,
            round(ajust_age,1) AS aj_age, round(progression_credible,1) AS progression,
-           round(gros_matchs_percentile,0) AS gros_matchs, round(opp_coef_avg,3) AS coef_adv,
+           round(adv_ecart_haut_percentile,0) AS gros_matchs, round(opp_coef_avg,3) AS coef_adv,
            rang_archetype AS rang_mondial, round(score_percentile,1) AS percentile,
            round(base,1) AS base, round(excellence,1) AS excellence,
            round(fragilite,1) AS fragilite, pilier_fort, pilier_faible, taille_cm,
@@ -259,6 +318,187 @@ res = requete(f"""
 
 # ----------------------------------------------------------------- fiche joueur
 n_ = lambda v, f="{:.1f}", d="—": (f.format(v) if pd.notna(v) else d)
+_date = lambda v: pd.Timestamp(v).strftime("%d/%m/%y") if pd.notna(v) else "?"
+TEAL, GRIS = "#1F6F6B", "#9AA5A4"
+PALIERS = {"bas": "Bas de tableau", "milieu": "Milieu de tableau", "haut": "Top du championnat"}
+COULEUR_PALIER = {"bas": "#A9C9C6", "milieu": "#5F9E99", "haut": TEAL}
+NIVEAU_AIDE = ("**Niveau** = score de performance du poste : 50 = joueur médian, "
+               "~67 = top 10 %, déjà corrigé de la difficulté de chaque match.")
+
+
+def lignes_joueur(table: str, cle: tuple, ordre: str) -> pd.DataFrame:
+    return requete(f"""SELECT * FROM {table}
+        WHERE playerId=? AND squadId=? AND iterationId=? AND position=? AND archetype=?
+        ORDER BY {ordre}""", cle)
+
+
+def _vrai(v) -> bool:
+    return pd.notna(v) and bool(v)
+
+
+def verdict_forme(d, blocs: pd.DataFrame) -> tuple[str, str]:
+    """Titre colore + phrase de lecture de l'evolution recente.
+    d : ligne de fait_joueur_saison ; blocs : lignes de fait_forme."""
+    if pd.isna(d.progression):
+        m = int(PARAMS["progression_min_minutes"])
+        return (":gray[**Évolution non mesurable**]",
+                f"Il faut au moins {m} minutes sur ses derniers matchs **et** {m} minutes "
+                "avant pour comparer deux périodes.")
+    p, c = d.progression_percentile, d.progression_credible
+    nette = _vrai(d.progression_significative)
+    if nette:
+        titre = ":green[**📈 En nette hausse**]" if c > 0 else ":red[**📉 En nette baisse**]"
+    elif p >= 80 and c > 0:
+        titre = ":green[**↗ Plutôt en hausse**]"
+    elif p <= 20 and c < 0:
+        titre = ":orange[**↘ Plutôt en baisse**]"
+    else:
+        titre = ":gray[**→ Stable**]"
+    recents = blocs[blocs["bloc"] <= 1]
+    periode = (f", du {_date(recents['date_debut'].min())} au {_date(recents['date_fin'].max())}"
+               if not recents.empty else "")
+    hasard = round(100 * (1 - PARAMS["progression_fiabilite"]))
+    phrase = (f"Sur ses **{d.matchs_recent:.0f} derniers matchs** ({d.minutes_recent:.0f} min{periode}), "
+              f"niveau **{d.perf_recent:.0f}**, contre **{d.perf_avant:.0f}** sur ses "
+              f"{d.matchs_avant:.0f} matchs précédents ({d.minutes_avant:.0f} min). "
+              f"Écart mesuré : **{d.progression:+.0f}**. Sur si peu de matchs, environ {hasard} % "
+              f"d'un tel écart relève du hasard : la progression réelle est estimée à "
+              f"**{c:+.1f} pt**")
+    phrase += (", un écart qui dépasse nettement ce que produit le hasard." if nette else ".")
+    phrase += f" Évolution plus favorable que **{p:.0f} %** des joueurs du poste."
+    return titre, phrase
+
+
+def graphe_forme(blocs: pd.DataFrame, niveau_saison: float) -> go.Figure:
+    b = blocs.sort_values("bloc", ascending=False).reset_index(drop=True)   # ancien -> recent
+    x = list(range(len(b)))
+    debut, fin = b["date_debut"].map(_date).tolist(), b["date_fin"].map(_date).tolist()
+    fig = go.Figure(go.Scatter(
+        x=x, y=b["performance"], mode="lines+markers+text",
+        text=b["performance"].round(0).astype(int), textposition="top center",
+        line=dict(color=TEAL, width=3), marker=dict(size=9, color=TEAL),
+        customdata=list(zip(debut, fin, b["matchs"], b["minutes"])),
+        hovertemplate="Du %{customdata[0]} au %{customdata[1]}<br>"
+                      "%{customdata[2]:.0f} matchs · %{customdata[3]:.0f} min<br>"
+                      "Niveau <b>%{y:.0f}</b><extra></extra>"))
+    n_recents = int((b["bloc"] <= 1).sum())
+    if n_recents:
+        fig.add_vrect(x0=len(b) - n_recents - 0.5, x1=len(b) - 0.5, fillcolor=TEAL, opacity=0.08,
+                      line_width=0, annotation_text="~10 derniers matchs",
+                      annotation_position="top left")
+    _lignes_reference(fig, niveau_saison)
+    valeurs = b["performance"].tolist() + [niveau_saison, 50]
+    fig.update_layout(**MISE_EN_PAGE,
+                      xaxis=dict(tickvals=x, ticktext=[f"{a}<br>→ {z}" for a, z in zip(debut, fin)],
+                                 zeroline=False),
+                      yaxis=dict(title="Niveau", range=[max(0, min(valeurs) - 12), max(valeurs) + 12]))
+    return fig
+
+
+MISE_EN_PAGE = dict(height=340, margin=dict(l=50, r=10, t=40, b=50),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0, font=dict(size=11)))
+
+
+def _lignes_reference(fig: go.Figure, niveau_saison: float) -> None:
+    """Niveau de saison et mediane du poste, nommes en legende : des etiquettes
+    posees sur les lignes se chevauchent des que les deux valeurs sont proches."""
+    fig.update_traces(showlegend=False)
+    for y, nom, style, couleur in ((niveau_saison, f"Sa saison : {niveau_saison:.0f}", "dash", TEAL),
+                                   (50, "Médiane du poste : 50", "dot", GRIS)):
+        fig.add_hline(y=y, line_dash=style, line_color=couleur, line_width=1.5)
+        fig.add_trace(go.Scatter(x=[None], y=[None], mode="lines", name=nom,
+                                 line=dict(dash=style, color=couleur, width=1.5)))
+
+
+def verdict_adversaire(d, paliers: pd.DataFrame) -> tuple[str, str]:
+    """Titre colore + phrase de lecture du niveau selon l'adversaire."""
+    haut = paliers[paliers["palier"] == "haut"]
+    if haut.empty or pd.isna(d.adv_ecart_haut):
+        m = int(PARAMS["adv_min_minutes"])
+        return (":gray[**Pas assez de matchs pour comparer**]",
+                f"Il faut au moins {m} minutes (~{m // 90} matchs pleins) contre le top du "
+                "championnat **et** contre les autres adversaires.")
+    h, q, e = haut.iloc[0], d.adv_ecart_haut_percentile, d.adv_ecart_haut
+    if q >= 75 and e > 0:
+        titre = ":green[**⬆ Élève son niveau contre les gros**]"
+    elif q <= 25 and e < 0:
+        titre = ":orange[**⬇ Moins bon contre les gros**]"
+    else:
+        titre = ":gray[**= Même niveau quel que soit l'adversaire**]"
+    p = paliers.set_index("palier")
+    detail = [(f"**{p.loc[k, 'performance']:.0f}** contre le {nom.lower()} "
+               f"({p.loc[k, 'matchs']:.0f} matchs{', peu fiable' if p.loc[k, 'matchs'] < 5 else ''})")
+              if k in p.index else f"trop peu de matchs contre le {nom.lower()}"
+              for k, nom in PALIERS.items()]
+    phrase = ("Niveau " + ", ".join(detail) + ". "
+              f"Face au top, il est à **{e:+.0f}** de son niveau contre les autres adversaires "
+              f"({h.performance - e:.0f}) : un écart plus favorable que **{q:.0f} %** des joueurs "
+              f"du poste. Dans l'absolu, face au top, il fait mieux que **{h.percentile:.0f} %** "
+              "des joueurs du poste.")
+    return titre, phrase
+
+
+def graphe_adversaire(paliers: pd.DataFrame, niveau_saison: float) -> go.Figure:
+    p = paliers.set_index("palier")
+    ok = [k in p.index for k in PALIERS]
+    perf = [p.loc[k, "performance"] if o else 0 for k, o in zip(PALIERS, ok)]
+    fig = go.Figure(go.Bar(
+        x=list(PALIERS.values()), y=perf,
+        marker_color=[COULEUR_PALIER[k] if o else "#E3E7E6" for k, o in zip(PALIERS, ok)],
+        text=[f"<b>{p.loc[k, 'performance']:.0f}</b><br>{p.loc[k, 'matchs']:.0f} matchs" if o
+              else "trop peu<br>de matchs" for k, o in zip(PALIERS, ok)],
+        textposition="outside", cliponaxis=False,
+        customdata=[(p.loc[k, "minutes"], p.loc[k, "percentile"]) if o else (0, 0)
+                    for k, o in zip(PALIERS, ok)],
+        hovertemplate="%{x}<br>%{customdata[0]:.0f} min<br>Niveau <b>%{y:.0f}</b> "
+                      "(mieux que %{customdata[1]:.0f} % du poste)<extra></extra>"))
+    _lignes_reference(fig, niveau_saison)
+    fig.update_layout(**MISE_EN_PAGE,
+                      yaxis=dict(title="Niveau", range=[0, max(perf + [niveau_saison, 50]) + 20]))
+    return fig
+
+
+def section_forme(cle: tuple, d, piliers: pd.DataFrame) -> None:
+    st.markdown("##### 📈 Évolution sur la saison")
+    blocs = lignes_joueur("fait_forme", cle, "bloc")
+    titre, phrase = verdict_forme(d, blocs)
+    st.markdown(f"{titre}  \n{phrase}")
+    if len(blocs) >= 2:
+        st.plotly_chart(graphe_forme(blocs, d.score_performance), width="stretch", key=f"forme_{cle}")
+        bloc = int(PARAMS["forme_bloc_minutes"])
+        ecart = requete("""SELECT stddev(b.performance - f.score_performance) AS s
+            FROM fait_forme b JOIN fait_joueur_saison f
+            USING (playerId, squadId, iterationId, position, archetype)
+            WHERE b.archetype = ?""", (cle[-1],))["s"].iloc[0]
+        texte = (f"{NIVEAU_AIDE} Chaque point = un bloc d'environ {bloc} min "
+                 f"(~{bloc // 90} matchs pleins), du plus ancien à gauche au plus récent à droite. "
+                 f"Un bloc s'écarte en moyenne de ±{ecart:.0f} points du niveau de saison sans que "
+                 "rien ne change vraiment : c'est la **tendance** qui compte, pas un point isolé.")
+        mouv = piliers.dropna(subset=["progression"])
+        if not mouv.empty and pd.notna(d.progression):
+            hausse = mouv.loc[mouv["progression"].idxmax()]
+            baisse = mouv.loc[mouv["progression"].idxmin()]
+            texte += (f"  \nPiliers qui ont le plus bougé sur les ~10 derniers matchs : "
+                      f"**{hausse.pilier}** ({hausse.progression:+.0f} pts de percentile) et "
+                      f"**{baisse.pilier}** ({baisse.progression:+.0f}). Écarts bruts, encore plus "
+                      "bruités que le niveau global : une piste à vérifier en vidéo, pas une conclusion.")
+        st.caption(texte)
+    elif not blocs.empty:
+        st.caption("Un seul bloc de matchs disponible : pas de courbe possible.")
+
+
+def section_adversaire(cle: tuple, d) -> None:
+    st.markdown("##### 🆚 Selon le niveau de l'adversaire")
+    paliers = lignes_joueur("fait_adversaire", cle, "ordre")
+    titre, phrase = verdict_adversaire(d, paliers)
+    st.markdown(f"{titre}  \n{phrase}")
+    if not paliers.empty:
+        st.plotly_chart(graphe_adversaire(paliers, d.score_performance), width="stretch",
+                        key=f"adv_{cle}")
+        st.caption(f"{NIVEAU_AIDE} Paliers = tiers des adversaires selon leur rating Impect à la "
+                   "date du match, dans ce championnat. La difficulté étant déjà compensée, un 50 "
+                   "face au top vaut un joueur médian du poste. Peu de matchs par palier : "
+                   "c'est une tendance, pas une preuve.")
 
 
 def carte_joueur(j) -> None:
@@ -298,7 +538,7 @@ def carte_joueur(j) -> None:
 
     g1, g2 = st.columns([3, 2])
     with g1:
-        piliers = requete("""SELECT pilier, percentile, poids FROM fait_pilier
+        piliers = requete("""SELECT pilier, percentile, poids, progression FROM fait_pilier
             WHERE playerId=? AND squadId=? AND iterationId=? AND position=? AND archetype=?
             ORDER BY poids DESC""", cle)
         piliers["pilier"] = piliers["pilier"].str.replace("_", " ")
@@ -324,15 +564,16 @@ def carte_joueur(j) -> None:
                        n_(j.coef_def, "{:.3f}"), n_(j.rating_club, "{:.3f}"),
                        n_(j.rating_ligue, "{:.3f}")]}),
             hide_index=True, width="stretch")
-        forme = []
-        if pd.notna(j.progression):
-            forme.append(f"- Progression crédible : **{j.progression:+.1f}** point")
-        if pd.notna(j.gros_matchs):
-            forme.append(f"- Gros matchs : **{j.gros_matchs:.0f}e percentile** "
-                         f"(delta {j.gros_matchs_delta:+.1f})")
-        forme.append(f"- Pilier le plus fort : **{str(j.pilier_fort).replace('_', ' ')}**")
-        forme.append(f"- Pilier le plus faible : **{str(j.pilier_faible).replace('_', ' ')}**")
-        st.markdown("**Forme et gros matchs**\n" + "\n".join(forme))
+        st.markdown(f"**Points marquants**\n- Pilier le plus fort : **{str(j.pilier_fort).replace('_', ' ')}**\n"
+                    f"- Pilier le plus faible : **{str(j.pilier_faible).replace('_', ' ')}**")
+
+    st.markdown("#### Forme et adversaires")
+    d = lignes_joueur("fait_joueur_saison", cle, "archetype").iloc[0]
+    h1, h2 = st.columns(2)
+    with h1:
+        section_forme(cle, d, piliers)
+    with h2:
+        section_adversaire(cle, d)
 
     met = requete("""SELECT metrique, pilier, valeur_brute, z FROM fait_metrique
         WHERE playerId=? AND squadId=? AND iterationId=? AND position=? AND archetype=?
@@ -372,7 +613,7 @@ CHAMPS = """nom, club, competition, pays, niveau, saison, round(score,1) AS scor
     round(age_years,1) AS age, minutes_jouees AS minutes, pied_fort,
     round(score_performance,1) AS performance, round(ajust_niveau,1) AS aj_niveau,
     round(ajust_age,1) AS aj_age, round(progression_credible,1) AS progression,
-    round(gros_matchs_percentile,0) AS gros_matchs, round(opp_coef_avg,3) AS coef_adv,
+    round(adv_ecart_haut_percentile,0) AS gros_matchs, round(opp_coef_avg,3) AS coef_adv,
     rang_archetype AS rang_mondial, round(score_percentile,1) AS percentile,
     round(base,1) AS base, round(excellence,1) AS excellence, round(fragilite,1) AS fragilite,
     pilier_fort, pilier_faible, taille_cm, n_matches_oppw AS matchs,
@@ -446,8 +687,8 @@ else:
                       "aj_age", "progression", "gros_matchs", "coef_adv", "rang_mondial"],
         column_config={
             "score": st.column_config.ProgressColumn("Score", min_value=0, max_value=110, format="%.1f"),
-            "gros_matchs": st.column_config.NumberColumn("Gros matchs", help="Percentile du poste : >50 = meilleur que ses pairs contre le tiers supérieur"),
-            "progression": st.column_config.NumberColumn("Progression", help="Delta crédible de performance sur les ~10 derniers matchs"),
+            "gros_matchs": st.column_config.NumberColumn("Gros matchs", help="Écart de niveau entre ses matchs contre le top du championnat et ses autres matchs, en percentile du poste : 75+ = élève son niveau contre les gros, 25- = baisse. Détail dans la fiche."),
+            "progression": st.column_config.NumberColumn("Progression", help="Évolution réelle estimée (points de niveau) entre ses ~10 derniers matchs et le reste de la saison, hasard retiré : au-delà de ±3 = changement notable. Courbe dans la fiche."),
             "coef_adv": st.column_config.NumberColumn("Coef adv.", help="Coefficient adversaire moyen : >1 = calendrier plus dur que son club"),
         })
     if n_pages > 1:
