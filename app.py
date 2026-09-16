@@ -30,7 +30,7 @@ _ICI = Path(__file__).resolve().parent
 DB = next((p for p in (_ICI / "charleroi_scouting.duckdb",
                        _ICI.parent / "charleroi_scouting.duckdb") if p.exists()),
           _ICI / "charleroi_scouting.duckdb")
-ARCHETYPES = {"CB": "Défenseur central", "FB": "Latéral", "WG": "Ailier",
+ARCHETYPES = {"GK": "Gardien", "CB": "Défenseur central", "FB": "Latéral", "WG": "Ailier",
               "SIX": "Milieu défensif (6)", "EIGHT": "Milieu relayeur (8)",
               "TEN": "Meneur offensif (10)", "NINE": "Avant-centre (9)"}
 
@@ -143,7 +143,7 @@ if st.sidebar.button("Se déconnecter"):
 # Libelle inclus dans l'option (plutot que format_func) : identique a l'ecran,
 # mais pilotable par les tests automatises de Streamlit.
 archetype = st.sidebar.selectbox(
-    "Poste / archétype", [f"{a} — {n}" for a, n in ARCHETYPES.items()]).split(" — ")[0]
+    "Poste / archétype", [f"{a} — {n}" for a, n in ARCHETYPES.items()], index=1).split(" — ")[0]
 saison = st.sidebar.multiselect("Saison", saisons, default=[s for s in saisons if s in ("25/26", "2026")])
 recherche = st.sidebar.text_input("Recherche par nom", placeholder="ex. Beitia")
 
@@ -892,10 +892,13 @@ def carte_joueur(j) -> None:
     if not met.empty:
         f1, f2 = st.columns(2)
         f1.markdown("**Points forts**")
-        f1.dataframe(met.head(7)[["metrique", "pilier", "z", "valeur_brute"]].round(2),
+        # Au plus la moitie des metriques de chaque cote : avec les 10 metriques
+        # du gardien, 7 + 7 ferait apparaitre les memes lignes dans les deux listes.
+        n_pf = min(7, len(met) // 2)
+        f1.dataframe(met.head(n_pf)[["metrique", "pilier", "z", "valeur_brute"]].round(2),
                      hide_index=True, width="stretch")
         f2.markdown("**Points faibles**")
-        f2.dataframe(met.tail(7)[["metrique", "pilier", "z", "valeur_brute"]].round(2).iloc[::-1],
+        f2.dataframe(met.tail(n_pf)[["metrique", "pilier", "z", "valeur_brute"]].round(2).iloc[::-1],
                      hide_index=True, width="stretch")
 
     a1, a2 = st.columns(2)
