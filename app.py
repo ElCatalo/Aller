@@ -163,9 +163,11 @@ _choix_profil = st.sidebar.selectbox(
     "Profil RCSC", ["Tous les profils"] + list(_libelles_profils),
     help="Ne garde que les joueurs qui correspondent à ce sous-archétype, classés par correspondance.")
 profil_id = _libelles_profils.get(_choix_profil)
-inclure_limites = st.sidebar.checkbox("Inclure les profils limites", value=True, disabled=profil_id is None,
-                                      help="Limite = un critère juste sous son seuil, ou un pilier "
-                                           "instable lu sur une seule saison.")
+# Pas de verdict binaire cote calcul (cf. profils_rcsc.py) : le curseur est un
+# simple filtre d'affichage sur la correspondance, SEUIL_PENCHANT (50) par defaut.
+seuil_correspondance = st.sidebar.slider(
+    "Correspondance minimale", 0, 100, 50, step=5, disabled=profil_id is None,
+    help="Ne garde que les joueurs dont la correspondance à ce profil dépasse ce seuil.")
 # La correspondance mesure un style, pas un niveau : par defaut on classe les
 # joueurs du profil par score V8 (qualite), la correspondance reste affichee.
 tri_profil = st.sidebar.radio("Classer les joueurs du profil par", ["Score", "Correspondance"],
@@ -376,17 +378,17 @@ _exclus = ids_exclus()
 if masquer_exclus and _exclus:
     where.append(f"playerId NOT IN ({','.join('?' * len(_exclus))})"); params += _exclus
 
-# Profil RCSC : meme joueur-saison, meme pool, verdict retenu.
+# Profil RCSC : meme joueur-saison, meme pool. Plus de verdict : filtre sur
+# le score de correspondance lui-meme (cf. profils_rcsc.py).
 _SOUS_PROFIL = """FROM fait_profil p WHERE p.playerId = v_joueurs.playerId AND p.squadId = v_joueurs.squadId
     AND p.iterationId = v_joueurs.iterationId AND p.position = v_joueurs.position
     AND p.archetype = v_joueurs.archetype AND p.profil_id = ?"""
 _extra_select, _extra_params, _ordre = "", [], "score DESC"
 if profil_id:
-    _verdicts = "('correspond', 'limite')" if inclure_limites else "('correspond')"
-    where.append(f"EXISTS (SELECT 1 {_SOUS_PROFIL} AND p.verdict IN {_verdicts})"); params.append(profil_id)
-    _extra_select = (f", (SELECT round(p.correspondance, 0) {_SOUS_PROFIL}) AS corr_profil"
-                     f", (SELECT p.verdict {_SOUS_PROFIL}) AS verdict_profil")
-    _extra_params = [profil_id, profil_id]
+    where.append(f"EXISTS (SELECT 1 {_SOUS_PROFIL} AND p.correspondance >= ?)")
+    params += [profil_id, seuil_correspondance]
+    _extra_select = f", (SELECT round(p.correspondance, 0) {_SOUS_PROFIL}) AS corr_profil"
+    _extra_params = [profil_id]
     _ordre = "corr_profil DESC, score DESC" if tri_profil == "Correspondance" else "score DESC, corr_profil DESC"
 
 # Pagination : on ne descend jamais plus de PAR_PAGE lignes de la base, sinon
@@ -421,7 +423,7 @@ res = requete(f"""
            round(attdef_coef_att_avg,3) AS coef_att, round(attdef_coef_def_avg,3) AS coef_def,
            round(club_rating,3) AS rating_club, round(competition_avg_rating,3) AS rating_ligue,
            round(gros_matchs_delta,1) AS gros_matchs_delta,
-           profil_principal, profil_verdict,
+           profil_principal,
            playerId, squadId, iterationId, position{_extra_select}
     FROM v_joueurs WHERE {' AND '.join(where)}
     ORDER BY {_ordre} LIMIT {PAR_PAGE} OFFSET {page * PAR_PAGE}""", tuple(_extra_params + params))
@@ -822,8 +824,6 @@ def section_adversaire(cle: tuple, d, saison_fiche: str) -> None:
         st.caption(texte)
 
 
-VERDICT_AFFICHAGE = {"correspond": ":green[**✓ correspond**]", "limite": ":orange[**~ limite**]",
-                     "exclu": ":red[**✗ exclu**]"}
 STATUT_PROFIL = {"partiel": "partiel : une partie du profil n'est pas mesurée",
                  "derive": "règle dérivée des autres profils du poste"}
 
@@ -833,12 +833,15 @@ def _morceaux(texte) -> list[str]:
 
 
 def section_profils(cle: tuple) -> None:
-    """Profils RCSC (sous-archetypes) du joueur dans ce pool : les 3 plus proches,
-    puis le detail de tous les profils du poste. Calcul : profils_rcsc.py."""
+    """Profils RCSC (sous-archetypes) du joueur dans ce pool : les 3 plus proches
+    par correspondance, puis le detail de tous les profils du poste. Pas de
+    verdict ni d'exclusion (cf. profils_rcsc.py) : le classement se fait
+    uniquement sur le score de correspondance, avec des points d'attention
+    (vigilance) sur les non-négociables et une info de style à part."""
     arch = cle[-1]
     try:
-        prof = requete("""SELECT p.correspondance, p.rang_pct, p.verdict, p.criteres_ok, p.criteres_ko,
-                                 p.vigilance, d.num, d.nom, d.statut, f.erreur_type
+        prof = requete("""SELECT p.correspondance, p.rang_pct, p.criteres_ok, p.vigilance,
+                                 p.info_style, d.num, d.nom, d.statut, f.erreur_type
             FROM fait_profil p JOIN dim_profil d USING (profil_id)
             LEFT JOIN fiabilite_profil f USING (archetype, profil_id)
             WHERE p.playerId=? AND p.squadId=? AND p.iterationId=? AND p.position=? AND p.archetype=?""", cle)
@@ -848,54 +851,50 @@ def section_profils(cle: tuple) -> None:
     if prof.empty:
         st.caption("Profils calculés à partir de 900 minutes jouées à ce poste.")
         return
-    prof = (prof.assign(_ordre=prof["verdict"].map({"correspond": 0, "limite": 1, "exclu": 2}))
-                .sort_values(["_ordre", "correspondance"], ascending=[True, False]).reset_index(drop=True))
-    retenus = prof[prof["verdict"] != "exclu"].head(3)
-    if retenus.empty:
-        st.caption("Il ne franchit les critères d'aucun profil du poste. Les trois plus proches :")
-        retenus = prof.sort_values("correspondance", ascending=False).head(3)
+    prof = prof.sort_values("correspondance", ascending=False).reset_index(drop=True)
+    retenus = prof.head(3)
     for col, r in zip(st.columns(3), retenus.itertuples()):
         with col.container(border=True):
             statut = f"  \n:gray[{STATUT_PROFIL[r.statut]}]" if r.statut in STATUT_PROFIL else ""
-            st.markdown(f"**{r.num} · {r.nom}**  \n{VERDICT_AFFICHAGE[r.verdict]}{statut}")
+            st.markdown(f"**{r.num} · {r.nom}**{statut}")
             if pd.notna(r.correspondance):
                 st.progress(min(max(r.correspondance / 100, 0.0), 1.0),
                             text=f"Correspondance {r.correspondance:.0f} · P{r.rang_pct:.0f} du pool")
             lignes = ([f"✓ {t}" for t in _morceaux(r.criteres_ok)]
                       + [f"⚠ {t}" for t in _morceaux(r.vigilance)]
-                      + [f"✗ {t}" for t in _morceaux(r.criteres_ko)])
+                      + [f"· {t}" for t in _morceaux(r.info_style)])
             st.caption("  \n".join(lignes))
 
     notes = []
-    tete = retenus[retenus["verdict"] != "exclu"]
-    if len(tete) >= 2 and pd.notna(tete.iloc[0]["erreur_type"]):
-        ecart = abs(tete.iloc[0]["correspondance"] - tete.iloc[1]["correspondance"])
-        if ecart < tete.iloc[0]["erreur_type"]:
-            notes.append(f"**{tete.iloc[0]['nom']}** et **{tete.iloc[1]['nom']}** : {ecart:.0f} point(s) "
-                         f"d'écart, sous l'erreur type de la correspondance (~{tete.iloc[0]['erreur_type']:.0f}) : "
+    if len(retenus) >= 2 and pd.notna(retenus.iloc[0]["erreur_type"]):
+        ecart = abs(retenus.iloc[0]["correspondance"] - retenus.iloc[1]["correspondance"])
+        if ecart < retenus.iloc[0]["erreur_type"]:
+            notes.append(f"**{retenus.iloc[0]['nom']}** et **{retenus.iloc[1]['nom']}** : {ecart:.0f} point(s) "
+                         f"d'écart, sous l'erreur type de la correspondance (~{retenus.iloc[0]['erreur_type']:.0f}) : "
                          "profils équivalents, pas classés.")
     if arch == "CB":
         notes.append("Défenseur couvreur (06) non calculé : vitesse, anticipation et 1v1 lancé ne sont pas "
                      "mesurés par Impect.")
     if arch in ("SIX", "EIGHT", "TEN"):
         notes.append(f"Lecture dans le pool {arch} : dans un autre pool de milieu, ses profils peuvent différer.")
-    notes.append("Correspondance = ressemblance de style (0-100), pas un niveau : le niveau reste le score.")
+    notes.append("Correspondance = ressemblance de style (0-100), pas un niveau : le niveau reste le score. "
+                 "Vigilance = point d'attention sur un non-négociable du profil ; l'info de style (zones de "
+                 "touches, jeu en retrait) est descriptive, elle ne compte pas dans le score.")
     st.caption("  \n".join(notes))
 
     with st.expander(f"Détail des {len(prof)} profils du poste"):
         st.dataframe(
-            prof[["num", "nom", "verdict", "correspondance", "rang_pct", "criteres_ok", "vigilance", "criteres_ko"]],
+            prof[["num", "nom", "correspondance", "rang_pct", "criteres_ok", "vigilance", "info_style"]],
             hide_index=True, width="stretch",
             column_config={
                 "num": st.column_config.TextColumn("N°"),
                 "nom": st.column_config.TextColumn("Profil"),
-                "verdict": st.column_config.TextColumn("Verdict"),
                 "correspondance": st.column_config.ProgressColumn("Correspondance", min_value=0, max_value=100,
                                                                   format="%.0f"),
                 "rang_pct": st.column_config.NumberColumn("Percentile", format="P%.0f"),
                 "criteres_ok": st.column_config.TextColumn("Critères validés"),
                 "vigilance": st.column_config.TextColumn("Vigilance"),
-                "criteres_ko": st.column_config.TextColumn("Critères non validés"),
+                "info_style": st.column_config.TextColumn("Style (info)"),
             })
 
 
@@ -1061,7 +1060,7 @@ CHAMPS = """nom, club, competition, pays, niveau, saison, round(score,1) AS scor
     round(attdef_coef_def_avg,3) AS coef_def, round(club_rating,3) AS rating_club,
     round(competition_avg_rating,3) AS rating_ligue,
     round(gros_matchs_delta,1) AS gros_matchs_delta, archetype AS archetype_courant,
-    profil_principal, profil_verdict,
+    profil_principal,
     playerId, squadId, iterationId, position"""
 
 club_param = st.query_params.get("club")
@@ -1145,7 +1144,7 @@ else:
         _tri = "correspondance au profil" if tri_profil == "Correspondance" else "score"
         st.caption(f"Joueurs **{premier} à {dernier}** sur {total} qui correspondent au profil "
                    f"**{_choix_profil}**, classés par {_tri}. 👉 Clique sur une ligne pour ouvrir la fiche.")
-        _colonnes_profil = ["corr_profil", "verdict_profil"]
+        _colonnes_profil = ["corr_profil"]
     else:
         st.caption(f"Joueurs **{premier} à {dernier}** sur {total}, classés par score. "
                    "👉 Clique sur une ligne pour ouvrir la fiche du joueur.")
@@ -1159,14 +1158,11 @@ else:
         column_config={
             "score": st.column_config.ProgressColumn("Score", min_value=0, max_value=110, format="%.1f"),
             "profil_principal": st.column_config.TextColumn(
-                "Profil RCSC", help="Profil du poste qui lui correspond le mieux (hors profils exclus). "
+                "Profil RCSC", help="Profil du poste dont la correspondance est la plus haute. "
                                     "Détail dans la fiche."),
             "corr_profil": st.column_config.ProgressColumn(
                 "Correspondance", min_value=0, max_value=100, format="%.0f",
                 help="Ressemblance au profil (0-100) : un style, pas un niveau."),
-            "verdict_profil": st.column_config.TextColumn(
-                "Verdict", help="correspond : tous les critères passent · limite : un critère juste sous son "
-                                "seuil ou lu sur une seule saison"),
             "gros_matchs": st.column_config.NumberColumn("Gros matchs", help="Écart de niveau entre ses matchs contre le top du championnat et ses autres matchs, en percentile du poste : 75+ = élève son niveau contre les gros, 25- = baisse. Détail dans la fiche."),
             "progression": st.column_config.NumberColumn("Progression", help="Évolution réelle estimée (points de niveau) entre ses ~10 derniers matchs et le reste de la saison, hasard retiré : au-delà de ±3 = changement notable. Courbe dans la fiche."),
             "coef_adv": st.column_config.NumberColumn("Coef adv.", help="Coefficient adversaire moyen : >1 = calendrier plus dur que son club"),
