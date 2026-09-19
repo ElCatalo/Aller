@@ -2,7 +2,7 @@
 Plateforme de scouting Charleroi -- v1 (recherche, filtres, fiche joueur).
 ===============================================================================
 Lit UNIQUEMENT la base DuckDB construite par db_build.py. Aucun calcul de
-score ici : la formule reste dans Charleroi_MultiPoste_ScoreV9.py, la base en
+score ici : la formule reste dans Charleroi_MultiPoste_ScoreV10.py, la base en
 contient le resultat et ses composants. La plateforme ne doit jamais
 recalculer un score a sa facon (cf. bug de calibration des vieux scripts ML).
 
@@ -125,7 +125,7 @@ def listes():
                       FROM dim_competition ORDER BY rating_moyen DESC""")
     saisons = requete("SELECT DISTINCT season FROM dim_saison ORDER BY season DESC")["season"].tolist()
     # Constantes du run (seuils, fiabilite...) : les phrases de la fiche les
-    # citent, elles ne doivent pas diverger de Charleroi_MultiPoste_ScoreV9.py.
+    # citent, elles ne doivent pas diverger de Charleroi_MultiPoste_ScoreV10.py.
     params = requete("SELECT * FROM parametres").iloc[0]
     return comp, saisons, params
 
@@ -145,17 +145,17 @@ if st.sidebar.button("Se déconnecter"):
 archetype = st.sidebar.selectbox(
     "Poste / archétype", [f"{a} — {n}" for a, n in ARCHETYPES.items()], index=1).split(" — ")[0]
 
-# V9 : deux lectures du niveau au lieu d'un score unique qui melangeait
-# qualite, niveau du club et age (cf. bloc VERSION 9 du pipeline).
+# V10 : Score (formule V8) = lecture par defaut, Qualite actuelle en second
+# (cf. bloc VERSION 10 du pipeline).
 LECTURES = {
+    "Score (performance + niveau + âge)": dict(
+        col="score", rang="rang_archetype", pct="score_percentile", court="Score",
+        aide="Performance terrain + ajustement linéaire du niveau du club + ajustement d'âge "
+             "(formule V8). Avantage les joueurs des gros clubs."),
     "Qualité actuelle (niveau JPL)": dict(
         col="qualite_actuelle", rang="rang_qualite", pct="qualite_percentile", court="Qualité",
         aide="Performance projetée au niveau d'un club moyen de JPL, sans l'âge : "
              "ce que le joueur vaut aujourd'hui."),
-    "Valeur recrutement": dict(
-        col="valeur_recrutement", rang="rang_valeur", pct="valeur_percentile", court="Valeur",
-        aide="Qualité actuelle + ajustement d'âge + bonus « contexte peu exposé » "
-             "(championnat un peu moins fort que la JPL) : l'intérêt du joueur à recruter."),
 }
 lecture = st.sidebar.radio("Lecture", list(LECTURES),
                            help="  \n".join(f"**{k}** : {v['aide']}" for k, v in LECTURES.items()))
@@ -428,8 +428,8 @@ st.session_state["page"] = page
 
 res = requete(f"""
     SELECT nom, club, competition, pays, niveau, saison, round({SC},1) AS score,
-           round(qualite_actuelle,1) AS qualite, round(valeur_recrutement,1) AS valeur,
-           round(ajust_traduction,1) AS aj_traduction, round(ajust_contexte,1) AS aj_contexte,
+           round(qualite_actuelle,1) AS qualite, round(score,1) AS score_v8,
+           round(ajust_traduction,1) AS aj_traduction, round(ajust_niveau,1) AS aj_niveau,
            role_milieu, round(age_years,1) AS age, minutes_jouees AS minutes, pied_fort,
            round(score_performance,1) AS performance,
            round(ajust_age,1) AS aj_age, round(progression_credible,1) AS progression,
@@ -959,21 +959,21 @@ def carte_joueur(j) -> None:
 
     k_ = st.columns(6)
     _rang = f"rang mondial {int(j.rang_mondial)}" if pd.notna(j.rang_mondial) else None
-    k_[0].metric("Qualité actuelle", n_(j.qualite), _rang if SC == "qualite_actuelle" else None,
+    k_[0].metric("Score", n_(j.score_v8), _rang if SC == "score" else None,
+                 delta_color="off", help=LECTURES["Score (performance + niveau + âge)"]["aide"])
+    k_[1].metric("Qualité actuelle", n_(j.qualite), _rang if SC == "qualite_actuelle" else None,
                  delta_color="off", help=LECTURES["Qualité actuelle (niveau JPL)"]["aide"])
-    k_[1].metric("Valeur recrutement", n_(j.valeur), _rang if SC == "valeur_recrutement" else None,
-                 delta_color="off", help=LECTURES["Valeur recrutement"]["aide"])
     k_[2].metric("Âge", n_(j.age))
     k_[3].metric("Minutes", n_(j.minutes, "{:.0f}"), f"{n_(j.matchs, '{:.0f}')} matchs")
     k_[4].metric("Pied", j.pied_fort or "—")
     k_[5].metric("Taille", n_(j.taille_cm, "{:.0f} cm"))
 
     st.markdown(
-        f"**Qualité actuelle {n_(j.qualite)}** = performance {n_(j.performance)} "
+        f"**Score {n_(j.score_v8)}** = performance {n_(j.performance)} "
         f"({n_(j.base)} de base {j.excellence:+.1f} excellence {-j.fragilite:+.1f} fragilité) "
-        f"{j.aj_traduction:+.1f} traduction au niveau JPL  \n"
-        f"**Valeur recrutement {n_(j.valeur)}** = qualité {n_(j.qualite)} "
-        f"{j.aj_age:+.1f} âge {j.aj_contexte:+.1f} contexte peu exposé")
+        f"{j.aj_niveau:+.1f} niveau du club {j.aj_age:+.1f} âge  \n"
+        f"**Qualité actuelle {n_(j.qualite)}** = performance {n_(j.performance)} "
+        f"{j.aj_traduction:+.1f} traduction au niveau JPL")
 
     b1, b2, b3, b4 = st.columns([1, 1, 1, 2])
     if b1.button(f"➕ Ajouter à « {shortlist} »", width="stretch", key=f"add_{cle}"):
@@ -1044,8 +1044,8 @@ def carte_joueur(j) -> None:
                      hide_index=True, width="stretch")
 
     a1, a2 = st.columns(2)
-    autres_arch = requete(f"""SELECT archetype, round(qualite_actuelle,1) AS qualite,
-            round(valeur_recrutement,1) AS valeur, {RG} AS rang
+    autres_arch = requete(f"""SELECT archetype, round(score,1) AS score,
+            round(qualite_actuelle,1) AS qualite, {RG} AS rang
         FROM fait_joueur_saison
         WHERE playerId=? AND squadId=? AND iterationId=? AND position=? AND archetype<>?
         ORDER BY {SC} DESC""", cle)
@@ -1074,8 +1074,8 @@ def carte_joueur(j) -> None:
 
 
 CHAMPS = f"""nom, club, competition, pays, niveau, saison, round({SC},1) AS score,
-    round(qualite_actuelle,1) AS qualite, round(valeur_recrutement,1) AS valeur,
-    round(ajust_traduction,1) AS aj_traduction, round(ajust_contexte,1) AS aj_contexte,
+    round(qualite_actuelle,1) AS qualite, round(score,1) AS score_v8,
+    round(ajust_traduction,1) AS aj_traduction, round(ajust_niveau,1) AS aj_niveau,
     role_milieu, round(age_years,1) AS age, minutes_jouees AS minutes, pied_fort,
     round(score_performance,1) AS performance,
     round(ajust_age,1) AS aj_age, round(progression_credible,1) AS progression,
@@ -1181,24 +1181,25 @@ else:
         on_select="rerun", selection_mode="single-row",
         column_order=["nom", "club", "competition", "pays", "niveau", "saison",
                       "score"] + (["role_milieu"] if archetype in ("SIX", "EIGHT") else [])
-                     + _colonnes_profil + [("valeur" if SC == "qualite_actuelle" else "qualite"),
-                      "age", "minutes", "pied_fort", "performance", "aj_traduction",
-                      "aj_age", "aj_contexte", "progression", "gros_matchs", "coef_adv", "rang_mondial"],
+                     + _colonnes_profil + [("score_v8" if SC == "qualite_actuelle" else "qualite"),
+                      "age", "minutes", "pied_fort", "performance", "aj_niveau", "aj_age",
+                      "aj_traduction", "progression", "gros_matchs", "coef_adv", "rang_mondial"],
         column_config={
             "score": st.column_config.ProgressColumn(lecture, min_value=0, max_value=120, format="%.1f",
                                                      help=LECTURES[lecture]["aide"]),
             "qualite": st.column_config.NumberColumn("Qualité", format="%.1f",
                                                      help=LECTURES["Qualité actuelle (niveau JPL)"]["aide"]),
-            "valeur": st.column_config.NumberColumn("Valeur", format="%.1f",
-                                                    help=LECTURES["Valeur recrutement"]["aide"]),
+            "score_v8": st.column_config.NumberColumn(
+                "Score", format="%.1f", help=LECTURES["Score (performance + niveau + âge)"]["aide"]),
+            "aj_niveau": st.column_config.NumberColumn(
+                "Aj. niveau", format="%+.1f",
+                help="Ajustement du Score pour le niveau du club : 40 points par point de rating "
+                     "d'écart avec la référence (0,49), linéaire."),
             "aj_traduction": st.column_config.NumberColumn(
                 "Trad. JPL", format="%+.1f",
-                help="Traduction au niveau JPL : de combien sa performance baisserait (ou monterait) dans "
-                     "un club moyen de JPL, pente mesurée sur les transferts réels."),
-            "aj_contexte": st.column_config.NumberColumn(
-                "Contexte", format="%+.1f",
-                help="Bonus « contexte peu exposé » (0 à 4) : championnat un peu moins fort que la JPL, "
-                     "joueur moins cher et moins suivi. Choix d'expertise, non mesuré."),
+                help="Traduction au niveau JPL (lecture Qualité actuelle) : de combien sa performance "
+                     "baisserait (ou monterait) dans un club moyen de JPL, pente mesurée sur les "
+                     "transferts réels."),
             "role_milieu": st.column_config.TextColumn(
                 "Rôle", help="Rôle qu'Impect lui attribue le plus souvent : 6 (milieu défensif) ou 8 "
                              "(milieu central), au moins 2/3 du temps de jeu ; 6/8 sinon."),
