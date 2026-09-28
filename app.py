@@ -1,5 +1,6 @@
 """
-Plateforme de scouting Charleroi -- v1 (recherche, filtres, fiche joueur).
+Plateforme de scouting Charleroi -- v1 (recherche, filtres, fiche joueur),
+onglet Monitoring (forme des N derniers jours, base charleroi_monitoring.duckdb).
 ===============================================================================
 Lit UNIQUEMENT la base DuckDB construite par db_build.py. Aucun calcul de
 score ici : la formule reste dans Charleroi_MultiPoste_ScoreV10.py, la base en
@@ -30,6 +31,10 @@ _ICI = Path(__file__).resolve().parent
 DB = next((p for p in (_ICI / "charleroi_scouting.duckdb",
                        _ICI.parent / "charleroi_scouting.duckdb") if p.exists()),
           _ICI / "charleroi_scouting.duckdb")
+# Base du monitoring (db_build.py -> Charleroi_MultiPoste_MonitoringV10.py) :
+# separee de la base de scoring, qui frole la limite de 100 Mo de GitHub.
+MON_DB = next((p for p in (_ICI / "charleroi_monitoring.duckdb",
+                           _ICI.parent / "charleroi_monitoring.duckdb") if p.exists()), None)
 ARCHETYPES = {"GK": "Gardien", "CB": "Défenseur central", "FB": "Latéral", "WG": "Ailier",
               "SIX": "Milieu défensif (6)", "EIGHT": "Milieu relayeur (8)",
               "TEN": "Meneur offensif (10)", "NINE": "Avant-centre (9)"}
@@ -111,7 +116,15 @@ def connexion():
     if not DB.exists():
         st.error(f"Base introuvable : {DB}\n\nLance d'abord : python impect-scouting/db_build.py")
         st.stop()
-    return duckdb.connect(str(DB), read_only=True)
+    con = duckdb.connect(str(DB), read_only=True)
+    # Tables du monitoring sous le prefixe "mon." : elles se joignent ainsi
+    # directement aux tables de saison (fiche, score de saison).
+    if MON_DB is not None:
+        try:
+            con.execute(f"ATTACH '{str(MON_DB).replace(chr(39), chr(39) * 2)}' AS mon (READ_ONLY)")
+        except duckdb.Error:
+            pass
+    return con
 
 
 @st.cache_data(ttl=600)
@@ -133,6 +146,26 @@ def listes():
 comp_df, saisons, PARAMS = listes()
 genere_le = PARAMS["genere_le"]
 
+
+@st.cache_data(ttl=600)
+def params_monitoring():
+    """Parametres du monitoring (date des donnees, periodes precalculees), None
+    si la base du monitoring est absente."""
+    try:
+        return requete("SELECT * FROM mon.mon_parametres").iloc[0]
+    except (duckdb.Error, IndexError):
+        return None
+
+
+MON = params_monitoring()
+
+# ----------------------------------------------------------------- onglets
+# Onglets a execution paresseuse : seul l'onglet ouvert calcule sa page, et la
+# barre laterale s'adapte (periode et minutes sur la periode en Monitoring).
+onglet_saison, onglet_mon = st.tabs(["📊 Scouting saison", "📡 Monitoring"],
+                                    key="onglet", on_change="rerun")
+MONITORING = bool(onglet_mon.open)
+
 # ----------------------------------------------------------------- filtres
 st.sidebar.title("🦓 Scouting Impect")
 st.sidebar.caption(f"Données calculées le {genere_le}")
@@ -144,6 +177,17 @@ if st.sidebar.button("Se déconnecter"):
 # mais pilotable par les tests automatises de Streamlit.
 archetype = st.sidebar.selectbox(
     "Poste / archétype", [f"{a} — {n}" for a, n in ARCHETYPES.items()], index=1).split(" — ")[0]
+
+# Monitoring : fenetre de N jours avant la date des donnees (derniere
+# synchronisation du run V10), precalculee pour chaque N de PERIODES.
+if MONITORING and MON is not None:
+    _fin_mon = pd.Timestamp(MON["date_reference"])
+    _periodes = [int(p) for p in str(MON["periodes"]).split(",")]
+    periode = st.sidebar.select_slider(
+        "Période monitorée (jours)", _periodes, value=int(MON["periode_defaut"]),
+        help=f"Matchs joués dans les N jours précédant le {_fin_mon:%d/%m/%Y}, date des dernières "
+             "données de matchs publiées.")
+    st.sidebar.caption(f"Du {_fin_mon - pd.Timedelta(days=periode):%d/%m/%Y} au {_fin_mon:%d/%m/%Y}")
 
 # V10 : Score (formule V8) = lecture par defaut, Qualite actuelle en second
 # (cf. bloc VERSION 10 du pipeline).
@@ -157,8 +201,14 @@ LECTURES = {
         aide="Performance projetée au niveau d'un club moyen de JPL, sans l'âge : "
              "ce que le joueur vaut aujourd'hui."),
 }
-lecture = st.sidebar.radio("Lecture", list(LECTURES),
-                           help="  \n".join(f"**{k}** : {v['aide']}" for k, v in LECTURES.items()))
+# Monitoring : une seule lecture, le Score (la Qualite actuelle repose sur une
+# calibration de saison) -- les fiches de saison ouvertes depuis l'onglet
+# restent donc sur le Score.
+if MONITORING:
+    lecture = list(LECTURES)[0]
+else:
+    lecture = st.sidebar.radio("Lecture", list(LECTURES),
+                               help="  \n".join(f"**{k}** : {v['aide']}" for k, v in LECTURES.items()))
 SC, RG, PCT, COURT = (LECTURES[lecture][k] for k in ("col", "rang", "pct", "court"))
 
 
@@ -175,20 +225,30 @@ CATALOGUE = catalogue_profils()
 _profils_poste = CATALOGUE[CATALOGUE["archetypes"].str.split(", ").apply(lambda l: archetype in l)
                            & (CATALOGUE["statut"] != "non_calculable")]
 _libelles_profils = {f"{r.num} · {r.nom}": r.profil_id for r in _profils_poste.itertuples()}
-_choix_profil = st.sidebar.selectbox(
-    "Profil RCSC", ["Tous les profils"] + list(_libelles_profils),
-    help="Ne garde que les joueurs qui correspondent à ce sous-archétype, classés par correspondance.")
-profil_id = _libelles_profils.get(_choix_profil)
-# Pas de verdict binaire cote calcul (cf. profils_rcsc.py) : le curseur est un
-# simple filtre d'affichage sur la correspondance, SEUIL_PENCHANT (50) par defaut.
-seuil_correspondance = st.sidebar.slider(
-    "Correspondance minimale", 0, 100, 50, step=5, disabled=profil_id is None,
-    help="Ne garde que les joueurs dont la correspondance à ce profil dépasse ce seuil.")
-# La correspondance mesure un style, pas un niveau : par defaut on classe les
-# joueurs du profil par la lecture choisie, la correspondance reste affichee.
-tri_profil = st.sidebar.radio("Classer les joueurs du profil par", [COURT, "Correspondance"],
-                              horizontal=True, disabled=profil_id is None)
-saison = st.sidebar.multiselect("Saison", saisons, default=[s for s in saisons if s in ("25/26", "2026")])
+# Profils RCSC et saison : propres au scouting de saison (les profils sont
+# calcules sur une saison complete).
+profil_id, seuil_correspondance, tri_profil, saison = None, 50, COURT, []
+_choix_profil = "Tous les profils"
+if MONITORING:
+    tri_monitoring = st.sidebar.radio(
+        "Classer par", ["Score", "Performance"], horizontal=True,
+        help="**Score** : performance sur la période + niveau du club + âge (formule du score de "
+             "saison). **Performance** : la performance terrain seule.")
+else:
+    _choix_profil = st.sidebar.selectbox(
+        "Profil RCSC", ["Tous les profils"] + list(_libelles_profils),
+        help="Ne garde que les joueurs qui correspondent à ce sous-archétype, classés par correspondance.")
+    profil_id = _libelles_profils.get(_choix_profil)
+    # Pas de verdict binaire cote calcul (cf. profils_rcsc.py) : le curseur est un
+    # simple filtre d'affichage sur la correspondance, SEUIL_PENCHANT (50) par defaut.
+    seuil_correspondance = st.sidebar.slider(
+        "Correspondance minimale", 0, 100, 50, step=5, disabled=profil_id is None,
+        help="Ne garde que les joueurs dont la correspondance à ce profil dépasse ce seuil.")
+    # La correspondance mesure un style, pas un niveau : par defaut on classe les
+    # joueurs du profil par la lecture choisie, la correspondance reste affichee.
+    tri_profil = st.sidebar.radio("Classer les joueurs du profil par", [COURT, "Correspondance"],
+                                  horizontal=True, disabled=profil_id is None)
+    saison = st.sidebar.multiselect("Saison", saisons, default=[s for s in saisons if s in ("25/26", "2026")])
 recherche = st.sidebar.text_input("Recherche par nom", placeholder="ex. Beitia")
 
 st.sidebar.markdown("**Championnats**")
@@ -372,12 +432,27 @@ masquer_exclus = st.sidebar.checkbox("Masquer les joueurs exclus", value=True)
 
 st.sidebar.markdown("**Profil**")
 age_max = st.sidebar.slider("Âge maximum", 16, 40, 40)
-minutes_min = st.sidebar.slider("Minutes minimum", 400, 3000, 900, step=100)
+if MONITORING:
+    # Seuil d'entree du monitoring : 30 min au poste sur la periode (cf.
+    # Charleroi_MultiPoste_MonitoringV10.MINUTES_MIN).
+    _min_mon = int(MON["minutes_min"]) if MON is not None else 30
+    minutes_min = st.sidebar.slider("Minutes minimum sur la période", _min_mon, 1200, _min_mon, step=30)
+else:
+    minutes_min = st.sidebar.slider("Minutes minimum", 400, 3000, 900, step=100)
 pieds = st.sidebar.multiselect("Pied fort", ["droit", "gauche", "les deux"])
 score_min = st.sidebar.slider(f"{COURT} minimum", 0, 100, 0, step=5)
 
-where, params = ["archetype = ?", "minutes_jouees >= ?", "age_years <= ?", f"{SC} >= ?"], \
-                [archetype, minutes_min, age_max, score_min]
+# Memes filtres pour les deux onglets ; seuls le volume (saison / periode) et
+# l'age different : le monitoring garde les joueurs sans date de naissance
+# tant que l'age maximum n'est pas regle.
+if MONITORING:
+    where, params = ["archetype = ?", "periode_jours = ?", "minutes >= ?", "score >= ?"], \
+                    [archetype, periode if MON is not None else 0, minutes_min, score_min]
+    if age_max < 40:
+        where.append("age_years <= ?"); params.append(age_max)
+else:
+    where, params = ["archetype = ?", "minutes_jouees >= ?", "age_years <= ?", f"{SC} >= ?"], \
+                    [archetype, minutes_min, age_max, score_min]
 if saison:
     where.append(f"saison IN ({','.join('?' * len(saison))})"); params += saison
 if recherche:
@@ -394,57 +469,64 @@ _exclus = ids_exclus()
 if masquer_exclus and _exclus:
     where.append(f"playerId NOT IN ({','.join('?' * len(_exclus))})"); params += _exclus
 
-# Profil RCSC : meme joueur-saison, meme pool. Plus de verdict : filtre sur
-# le score de correspondance lui-meme (cf. profils_rcsc.py).
-_SOUS_PROFIL = """FROM fait_profil p WHERE p.playerId = v_joueurs.playerId AND p.squadId = v_joueurs.squadId
-    AND p.iterationId = v_joueurs.iterationId AND p.position = v_joueurs.position
-    AND p.archetype = v_joueurs.archetype AND p.profil_id = ?"""
-_extra_select, _extra_params, _ordre = "", [], f"{SC} DESC"
-if profil_id:
-    where.append(f"EXISTS (SELECT 1 {_SOUS_PROFIL} AND p.correspondance >= ?)")
-    params += [profil_id, seuil_correspondance]
-    _extra_select = f", (SELECT round(p.correspondance, 0) {_SOUS_PROFIL}) AS corr_profil"
-    _extra_params = [profil_id]
-    _ordre = f"corr_profil DESC, {SC} DESC" if tri_profil == "Correspondance" else f"{SC} DESC, corr_profil DESC"
-
 # Pagination : on ne descend jamais plus de PAR_PAGE lignes de la base, sinon
 # l'affichage d'un archetype peu filtre (plusieurs milliers de joueurs) rame.
 # Le classement reste global : la page 2 donne bien les 501e a 1000e meilleurs.
 PAR_PAGE = 500
-_filtre = f"{' AND '.join(where)}|{params}"
-if st.session_state.get("_filtre_courant") != _filtre:
-    st.session_state["_filtre_courant"] = _filtre
-    st.session_state["page"] = 0          # tout changement de filtre ramene page 1
-page = st.session_state.get("page", 0)
 
-# Les statistiques portent sur TOUS les joueurs filtres, pas sur la page affichee.
-stats = requete(f"""SELECT count(*) AS n, median({SC}) AS med, max({SC}) AS max_,
-                           median(age_years) AS age_med
-                    FROM v_joueurs WHERE {' AND '.join(where)}""", tuple(params)).iloc[0]
-total = int(stats["n"])
-n_pages = max(1, -(-total // PAR_PAGE))   # division entière arrondie au-dessus
-page = min(page, n_pages - 1)
-st.session_state["page"] = page
 
-res = requete(f"""
-    SELECT nom, club, competition, pays, niveau, saison, round({SC},1) AS score,
-           round(qualite_actuelle,1) AS qualite, round(score,1) AS score_v8,
-           round(ajust_traduction,1) AS aj_traduction, round(ajust_niveau,1) AS aj_niveau,
-           role_milieu, round(age_years,1) AS age, minutes_jouees AS minutes, pied_fort,
-           round(score_performance,1) AS performance,
-           round(ajust_age,1) AS aj_age, round(progression_credible,1) AS progression,
-           round(adv_ecart_haut_percentile,0) AS gros_matchs, round(opp_coef_avg,3) AS coef_adv,
-           {RG} AS rang_mondial, round({PCT},1) AS percentile,
-           round(base,1) AS base, round(excellence,1) AS excellence,
-           round(fragilite,1) AS fragilite, pilier_fort, pilier_faible, taille_cm,
-           n_matches_oppw AS matchs, position AS poste, side,
-           round(attdef_coef_att_avg,3) AS coef_att, round(attdef_coef_def_avg,3) AS coef_def,
-           round(club_rating,3) AS rating_club, round(competition_avg_rating,3) AS rating_ligue,
-           round(gros_matchs_delta,1) AS gros_matchs_delta,
-           profil_principal,
-           playerId, squadId, iterationId, position{_extra_select}
-    FROM v_joueurs WHERE {' AND '.join(where)}
-    ORDER BY {_ordre} LIMIT {PAR_PAGE} OFFSET {page * PAR_PAGE}""", tuple(_extra_params + params))
+def page_courante(filtre: str) -> int:
+    """Page affichee ; tout changement de filtre ramene a la page 1."""
+    if st.session_state.get("_filtre_courant") != filtre:
+        st.session_state["_filtre_courant"] = filtre
+        st.session_state["page"] = 0
+    return st.session_state.get("page", 0)
+
+
+if not MONITORING:
+    # Profil RCSC : meme joueur-saison, meme pool. Plus de verdict : filtre sur
+    # le score de correspondance lui-meme (cf. profils_rcsc.py).
+    _SOUS_PROFIL = """FROM fait_profil p WHERE p.playerId = v_joueurs.playerId AND p.squadId = v_joueurs.squadId
+        AND p.iterationId = v_joueurs.iterationId AND p.position = v_joueurs.position
+        AND p.archetype = v_joueurs.archetype AND p.profil_id = ?"""
+    _extra_select, _extra_params, _ordre = "", [], f"{SC} DESC"
+    if profil_id:
+        where.append(f"EXISTS (SELECT 1 {_SOUS_PROFIL} AND p.correspondance >= ?)")
+        params += [profil_id, seuil_correspondance]
+        _extra_select = f", (SELECT round(p.correspondance, 0) {_SOUS_PROFIL}) AS corr_profil"
+        _extra_params = [profil_id]
+        _ordre = f"corr_profil DESC, {SC} DESC" if tri_profil == "Correspondance" else f"{SC} DESC, corr_profil DESC"
+
+    page = page_courante(f"{' AND '.join(where)}|{params}")
+
+    # Les statistiques portent sur TOUS les joueurs filtres, pas sur la page affichee.
+    stats = requete(f"""SELECT count(*) AS n, median({SC}) AS med, max({SC}) AS max_,
+                               median(age_years) AS age_med
+                        FROM v_joueurs WHERE {' AND '.join(where)}""", tuple(params)).iloc[0]
+    total = int(stats["n"])
+    n_pages = max(1, -(-total // PAR_PAGE))   # division entière arrondie au-dessus
+    page = min(page, n_pages - 1)
+    st.session_state["page"] = page
+
+    res = requete(f"""
+        SELECT nom, club, competition, pays, niveau, saison, round({SC},1) AS score,
+               round(qualite_actuelle,1) AS qualite, round(score,1) AS score_v8,
+               round(ajust_traduction,1) AS aj_traduction, round(ajust_niveau,1) AS aj_niveau,
+               role_milieu, round(age_years,1) AS age, minutes_jouees AS minutes, pied_fort,
+               round(score_performance,1) AS performance,
+               round(ajust_age,1) AS aj_age, round(progression_credible,1) AS progression,
+               round(adv_ecart_haut_percentile,0) AS gros_matchs, round(opp_coef_avg,3) AS coef_adv,
+               {RG} AS rang_mondial, round({PCT},1) AS percentile,
+               round(base,1) AS base, round(excellence,1) AS excellence,
+               round(fragilite,1) AS fragilite, pilier_fort, pilier_faible, taille_cm,
+               n_matches_oppw AS matchs, position AS poste, side,
+               round(attdef_coef_att_avg,3) AS coef_att, round(attdef_coef_def_avg,3) AS coef_def,
+               round(club_rating,3) AS rating_club, round(competition_avg_rating,3) AS rating_ligue,
+               round(gros_matchs_delta,1) AS gros_matchs_delta,
+               profil_principal,
+               playerId, squadId, iterationId, position{_extra_select}
+        FROM v_joueurs WHERE {' AND '.join(where)}
+        ORDER BY {_ordre} LIMIT {PAR_PAGE} OFFSET {page * PAR_PAGE}""", tuple(_extra_params + params))
 
 # ----------------------------------------------------------------- fiche joueur
 n_ = lambda v, f="{:.1f}", d="—": (f.format(v) if pd.notna(v) else d)
@@ -916,8 +998,10 @@ def section_profils(cle: tuple) -> None:
             })
 
 
-def carte_joueur(j) -> None:
-    """Fiche complete d'un joueur. j doit porter une colonne archetype_courant."""
+def carte_joueur(j, extra=None) -> None:
+    """Fiche complete d'un joueur. j doit porter une colonne archetype_courant.
+    extra : fonction affichant un bloc supplementaire sous les boutons (la
+    fiche ouverte depuis le Monitoring y ajoute la periode monitoree)."""
     arch = j.archetype_courant
     cle = (int(j.playerId), int(j.squadId), int(j.iterationId), j.position, arch)
 
@@ -986,6 +1070,9 @@ def carte_joueur(j) -> None:
             del st.query_params["fiche"]
         st.query_params["club"] = f"{int(j.squadId)}-{int(j.iterationId)}"
         st.rerun()
+
+    if extra is not None:
+        extra()
 
     section_profils(cle)
 
@@ -1090,153 +1177,471 @@ CHAMPS = f"""nom, club, competition, pays, niveau, saison, round({SC},1) AS scor
     profil_principal,
     playerId, squadId, iterationId, position"""
 
+
+# ================================================================= monitoring
+# Forme des N derniers jours, precalculee par Charleroi_MultiPoste_MonitoringV10
+# (appele par db_build.py) : la plateforme ne fait que lire. Meme formule que le
+# Score de saison, meme reference figee (un niveau 60 sur la periode vaut un 60
+# de saison), plus deux garde-fous plus stricts a petit volume : confiance
+# reduite du z metrique et metriques aberrantes ramenees dans une plage de
+# confiance. "Perf. brute" = la meme periode sans ces deux garde-fous.
+TRI_MONITORING = {"Score": "score", "Performance": "score_performance"}
+MON_CHAMPS = """m.nom, m.club, m.competition, m.pays, m.niveau, m.saison,
+    round(m.score,1) AS score, round(m.score_performance,1) AS performance,
+    round(m.perf_brute,1) AS perf_brute, round(m.ajust_niveau,1) AS aj_niveau,
+    round(m.ajust_age,1) AS aj_age, round(m.age_years,1) AS age, m.minutes,
+    m.n_matchs AS matchs, round(m.matchs_eq,1) AS matchs_eq,
+    round(m.confiance * 100, 0) AS confiance, m.nb_metriques_corrigees AS corrigees,
+    m.metriques_corrigees, m.pied_fort, m.taille_cm, m.rang, m.position AS poste,
+    m.premier_match, m.dernier_match, round(m.base,1) AS base,
+    round(m.excellence,1) AS excellence, round(m.fragilite,1) AS fragilite,
+    m.pilier_fort, m.pilier_faible, round(m.opp_coef_avg,3) AS coef_adv,
+    round(m.club_rating,3) AS rating_club,
+    round(f.score,1) AS score_saison, round(f.score_performance,1) AS perf_saison,
+    m.playerId, m.squadId, m.iterationId, m.position, m.archetype AS archetype_courant,
+    m.fiche_squadId, m.fiche_iterationId, m.fiche_position, m.fiche_archetype,
+    m.fiche_meme_saison"""
+# Fiche de saison correspondante (meme joueur, club, saison et archetype ; a
+# defaut sa saison evaluee la plus recente, cf. db_build._lien_fiche).
+MON_JOINTURE = """LEFT JOIN fait_joueur_saison f
+    ON f.playerId = m.playerId AND f.squadId = m.fiche_squadId
+   AND f.iterationId = m.fiche_iterationId AND f.position = m.fiche_position
+   AND f.archetype = m.archetype"""
+LIBELLE_PALIER = {"bas": "Bas de tableau", "milieu": "Milieu de tableau", "haut": "Top du championnat"}
+
+
+def bornes_periode() -> tuple[pd.Timestamp, pd.Timestamp]:
+    fin = pd.Timestamp(MON["date_reference"])
+    return fin - pd.Timedelta(days=periode), fin
+
+
+def graphe_matchs(matchs: pd.DataFrame, m) -> go.Figure:
+    """Niveau de chaque match de la periode (barres colorees par palier
+    d'adversaire), avec la performance de la periode brute et retenue."""
+    fig = go.Figure()
+    x = [f"{pd.Timestamp(d):%d/%m}<br>{(a if isinstance(a, str) else '?')[:16]}"
+         for d, a in zip(matchs["date"], matchs["adversaire"])]
+    fig.add_trace(go.Bar(
+        x=x, y=matchs["niveau"], showlegend=False,
+        marker_color=[COULEUR_PALIER.get(p, GRIS) for p in matchs["palier"]],
+        text=matchs["niveau"].round(0).astype("Int64").astype(str), textposition="outside",
+        cliponaxis=False,
+        customdata=[(pd.Timestamp(d).strftime("%d/%m/%Y"), a, LIBELLE_PALIER.get(p, "?"), r, mi, po)
+                    for d, a, p, r, mi, po in zip(matchs["date"], matchs["adversaire"], matchs["palier"],
+                                                  matchs["opp_rating"], matchs["minutes"],
+                                                  matchs["position"])],
+        hovertemplate="%{customdata[0]} contre %{customdata[1]}<br>%{customdata[2]} "
+                      "(rating %{customdata[3]:.2f})<br>%{customdata[4]:.0f} min · %{customdata[5]}"
+                      "<br>Niveau du match <b>%{y:.0f}</b><extra></extra>"))
+    for palier, libelle in LIBELLE_PALIER.items():
+        if (matchs["palier"] == palier).any():
+            fig.add_trace(go.Bar(x=[None], y=[None], name=f"Adversaire : {libelle.lower()}",
+                                 marker_color=COULEUR_PALIER[palier]))
+    for valeur, nom, style, couleur in ((m.perf_brute, "Performance brute de la période", "dash", TEAL),
+                                         (m.performance, "Performance retenue (classement)", "solid",
+                                          COULEUR_AUTRE_CONTEXTE)):
+        if pd.notna(valeur):
+            fig.add_hline(y=valeur, line_dash=style, line_color=couleur, line_width=1.5)
+            _legende_ligne(fig, f"{nom} : {valeur:.0f}", style, couleur)
+    _mediane(fig)
+    haut = max([50] + matchs["niveau"].dropna().tolist())
+    fig.update_layout(**MISE_EN_PAGE, bargap=0.35,
+                      yaxis=dict(title="Niveau", range=[0, haut + 18]),
+                      xaxis=dict(tickfont=dict(size=10 if len(matchs) > 8 else 12)))
+    return fig
+
+
+def graphe_piliers_periode(pm: pd.DataFrame, ps: pd.DataFrame) -> go.Figure:
+    """Percentile de chaque pilier sur la periode, a cote de celui de la saison."""
+    ordre = (ps if not ps.empty else pm).sort_values("poids", ascending=False)["pilier"].tolist()
+    ordre += [p for p in pm["pilier"] if p not in ordre]
+    fig = go.Figure()
+    for df, nom, couleur in ((ps, "Saison (fiche)", GRIS), (pm, "Période monitorée", TEAL)):
+        if df.empty:
+            continue
+        d = df.set_index("pilier").reindex(ordre)
+        fig.add_trace(go.Bar(y=[p.replace("_", " ") for p in ordre], x=d["percentile"], name=nom,
+                             orientation="h", marker_color=couleur,
+                             text=d["percentile"].round(0).astype("Int64").astype(str),
+                             textposition="outside", cliponaxis=False))
+    fig.add_vline(x=50, line_dash="dot", line_color="#999")
+    fig.update_layout(height=60 + 34 * len(ordre), margin=dict(l=0, r=20, t=30, b=0),
+                      barmode="group", xaxis=dict(range=[0, 105], title="Percentile du poste"),
+                      yaxis=dict(autorange="reversed"),
+                      legend=dict(orientation="h", yanchor="bottom", y=1.0, x=0))
+    return fig
+
+
+def section_monitoring(m, fiche) -> None:
+    """Bloc 'periode monitoree' de la fiche : chiffres de la periode, niveau
+    de chaque match (et niveau des adversaires), piliers periode vs saison."""
+    debut, fin = bornes_periode()
+    arch = m.archetype_courant
+    st.markdown(f"#### 📡 Sur les {periode} derniers jours — du {debut:%d/%m} au {fin:%d/%m/%Y}")
+    autre_poste = fiche is not None and fiche.archetype_courant != arch
+    if autre_poste:
+        st.caption(f"ℹ️ Fiche de saison affichée : **{fiche.saison} à {fiche.club}, archétype "
+                   f"{fiche.archetype_courant}** — il n'a jamais été évalué en {arch} sur une saison "
+                   "(400 minutes à ce poste). Le Score de saison n'est donc pas comparable à celui de la période.")
+    elif fiche is not None and not _vrai(m.fiche_meme_saison):
+        st.caption(f"ℹ️ Fiche de saison affichée : **{fiche.saison} à {fiche.club}** — sa saison en cours "
+                   f"({m.competition}, {m.club}) ne compte pas encore 400 minutes évaluées à ce poste.")
+    k = st.columns(6)
+    k[0].metric("Score période", n_(m.score), f"rang {int(m.rang)} du poste" if pd.notna(m.rang) else None,
+                delta_color="off", help="Même formule que le Score de saison : performance sur la période "
+                                        "+ niveau du club + âge. Rang parmi tous les joueurs du poste actifs "
+                                        "sur la période.")
+    ecart = (m.performance - m.perf_saison) if pd.notna(m.perf_saison) else None
+    k[1].metric("Performance", n_(m.performance),
+                f"{ecart:+.0f} vs saison" if ecart is not None else None,
+                help="Performance retenue pour le classement, après les garde-fous petits échantillons. "
+                     "Comparée à sa performance de saison (fiche).")
+    k[2].metric("Perf. brute", n_(m.perf_brute),
+                help="La même période sans les garde-fous du monitoring (confiance de saison, aucune "
+                     "métrique corrigée) : ce que le joueur a montré, bruit compris.")
+    k[3].metric("Matchs", f"{int(m.matchs)}", f"{m.minutes:.0f} min · {m.matchs_eq:.1f} pleins",
+                delta_color="off")
+    k[4].metric("Fiabilité", f"{m.confiance:.0f} %",
+                help="Part du signal conservée pour chaque métrique : 30 % sous un match plein, 60 % à "
+                     "400 minutes (le minimum d'une saison), 100 % à 15 matchs. Plus il a joué, moins sa "
+                     "performance est ramenée vers 50.")
+    k[5].metric("Métriques corrigées", f"{int(m.corrigees)}",
+                help="Métriques hors de la plage de confiance, ramenées à sa borne (jamais exclues). "
+                     "Plage d'autant plus étroite qu'il a peu joué.")
+    st.markdown(f"**Score période {n_(m.score)}** = performance {n_(m.performance)} "
+                f"({n_(m.base)} de base {m.excellence:+.1f} excellence {-m.fragilite:+.1f} fragilité) "
+                f"{m.aj_niveau:+.1f} niveau du club {m.aj_age:+.1f} âge"
+                + (f" · Score de saison **{n_(m.score_saison)}**" if pd.notna(m.score_saison) else ""))
+
+    matchs = requete("""SELECT * FROM mon.mon_match
+        WHERE playerId=? AND squadId=? AND archetype=? AND date > ? AND date <= ?
+        ORDER BY date""", (int(m.playerId), int(m.squadId), arch,
+                           debut.to_pydatetime(), fin.to_pydatetime()))
+    tous = requete("""SELECT count(DISTINCT matchId) AS n FROM mon.mon_match
+        WHERE playerId=? AND squadId=? AND date > ? AND date <= ?""",
+                   (int(m.playerId), int(m.squadId), debut.to_pydatetime(), fin.to_pydatetime()))["n"].iloc[0]
+    g1, g2 = st.columns([3, 2])
+    with g1:
+        st.markdown("##### 🗓️ Niveau de chaque match")
+        if matchs.empty:
+            st.caption("Aucun match détaillé à ce poste sur la période.")
+        else:
+            st.plotly_chart(graphe_matchs(matchs, m), width="stretch", key=f"mon_matchs_{m.playerId}_{arch}")
+            n_pal = matchs["palier"].value_counts()
+            adv = ", ".join(f"**{n_pal[p]}** contre le {LIBELLE_PALIER[p].lower()}"
+                            for p in ("haut", "milieu", "bas") if p in n_pal)
+            autres = int(tous) - matchs["matchId"].nunique()
+            texte = (f"{NIVEAU_AIDE} Chaque barre = un match, scoré seul contre la référence de saison "
+                     f"(couleur = niveau de l'adversaire : tiers de son championnat selon le rating Impect à "
+                     f"la date du match). Adversaires sur la période : {adv}. Un match isolé est très bruité "
+                     "(±15 à 20 points sans que rien ne change) : c'est la série qui compte. La ligne en "
+                     "tirets est la performance de toute la période, la ligne pleine celle retenue pour le "
+                     "classement (ramenée vers 50 à proportion du peu de temps joué).")
+            if autres > 0:
+                texte += f" {autres} autre(s) match(s) joué(s) à un autre poste, hors de ce classement."
+            st.caption(texte)
+            with st.expander(f"Détail des {len(matchs)} matchs"):
+                vue = matchs.assign(
+                    date=pd.to_datetime(matchs["date"]).dt.strftime("%d/%m/%Y"),
+                    palier=matchs["palier"].map(LIBELLE_PALIER),
+                    niveau=matchs["niveau"].round(0), opp_rating=matchs["opp_rating"].round(3))
+                st.dataframe(vue, hide_index=True, width="stretch",
+                             column_order=["date", "adversaire", "palier", "opp_rating", "minutes",
+                                           "position", "niveau"],
+                             column_config={"opp_rating": st.column_config.NumberColumn("Rating adverse"),
+                                            "palier": st.column_config.TextColumn("Niveau de l'adversaire"),
+                                            "niveau": st.column_config.NumberColumn("Niveau du match")})
+    with g2:
+        st.markdown("##### 🧱 Piliers : période vs saison")
+        pm = requete("""SELECT p.pilier, p.percentile, w.poids FROM mon.mon_pilier p
+            JOIN mon.mon_pilier_poids w USING (archetype, pilier)
+            WHERE p.periode_jours=? AND p.playerId=? AND p.squadId=? AND p.archetype=?""",
+                     (periode, int(m.playerId), int(m.squadId), arch))
+        ps = (requete("""SELECT pilier, percentile, poids FROM fait_pilier
+            WHERE playerId=? AND squadId=? AND iterationId=? AND position=? AND archetype=?""",
+                      (int(fiche.playerId), int(fiche.squadId), int(fiche.iterationId), fiche.position, arch))
+              if fiche is not None and not autre_poste
+              else pd.DataFrame(columns=["pilier", "percentile", "poids"]))
+        if not pm.empty:
+            st.plotly_chart(graphe_piliers_periode(pm, ps), width="stretch", key=f"mon_piliers_{m.playerId}_{arch}")
+            absents = [p.replace("_", " ") for p in ps["pilier"] if p not in set(pm["pilier"])]
+            if absents:
+                st.caption(f"Non mesurés sur une période ({', '.join(absents)}) : ils reposent sur des "
+                           "statistiques de saison, sans équivalent match par match.")
+        if m.corrigees and isinstance(m.metriques_corrigees, str) and m.metriques_corrigees:
+            st.caption("Métriques ramenées dans la plage de confiance : "
+                       + ", ".join(m.metriques_corrigees.split(";")) + ".")
+
+
+def carte_monitoring(m) -> None:
+    """Fiche d'un joueur du monitoring : sa fiche de saison habituelle, avec
+    la periode monitoree en plus. Sans fiche de saison (moins de 400 minutes
+    evaluees a ce poste, toutes saisons), en-tete minimal + la periode."""
+    fiche = pd.DataFrame()
+    if pd.notna(m.fiche_iterationId):
+        fiche = requete(f"""SELECT {CHAMPS} FROM v_joueurs
+            WHERE playerId=? AND squadId=? AND iterationId=? AND position=? AND archetype=?""",
+                        (int(m.playerId), int(m.fiche_squadId), int(m.fiche_iterationId),
+                         m.fiche_position, m.fiche_archetype))
+    if not fiche.empty:
+        f = fiche.iloc[0]
+        carte_joueur(f, extra=lambda: section_monitoring(m, f))
+        return
+    st.subheader(m.nom)
+    lieu = f"{m.club} · {m.competition}"
+    if pd.notna(m.pays):
+        lieu += f" ({m.pays}" + (f", D{int(m.niveau)})" if pd.notna(m.niveau) else ")")
+    st.caption(f"{lieu} · {m.saison} · {m.poste} · archétype {m.archetype_courant}")
+    j = m.copy()
+    b1, b2, _ = st.columns([1, 1, 3])
+    if b1.button(f"➕ Ajouter à « {shortlist} »", width="stretch", key=f"mon_add_{m.playerId}"):
+        ajouter(shortlist, j); st.toast(f"{m.nom} ajouté à « {shortlist} »"); st.rerun()
+    if b2.button("🚫 Exclure ce joueur", width="stretch", key=f"mon_exc_{m.playerId}"):
+        ajouter("exclus", j); st.toast(f"{m.nom} exclu"); st.rerun()
+    section_monitoring(m, None)
+    st.info("Pas encore de fiche de saison : il faut 400 minutes jouées à ce poste sur une saison "
+            "pour être évalué par le scoring de saison.")
+
+
+def vue_monitoring() -> None:
+    if MON is None:
+        st.warning("Base du monitoring absente : relance `python impect-scouting/db_build.py`, "
+                   "puis `publier.py` pour la mettre en ligne.")
+        return
+    debut, fin = bornes_periode()
+    st.title(f"📡 {archetype} — {ARCHETYPES[archetype]}")
+    filtre = " AND ".join(where)
+    stats_m = requete(f"""SELECT count(*) AS n, median(score) AS med, max(score) AS max_,
+                                 median(n_matchs) AS matchs_med
+                          FROM mon.mon_joueur WHERE {filtre}""", tuple(params)).iloc[0]
+    total_m = int(stats_m["n"])
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Joueurs actifs", f"{total_m}")
+    c2.metric("Score médian", n_(stats_m["med"]))
+    c3.metric("Meilleur score", n_(stats_m["max_"]))
+    c4.metric("Matchs médians", n_(stats_m["matchs_med"], "{:.0f}"))
+    if total_m == 0:
+        st.warning("Aucun joueur ne correspond à ces filtres sur la période.")
+        return
+    page_m = page_courante(f"mon|{filtre}|{params}|{tri_monitoring}")
+    n_pages_m = max(1, -(-total_m // PAR_PAGE))
+    page_m = min(page_m, n_pages_m - 1)
+    tri = TRI_MONITORING[tri_monitoring]
+    res_m = requete(f"""SELECT {MON_CHAMPS}
+        FROM (SELECT * FROM mon.mon_joueur WHERE {filtre}) m {MON_JOINTURE}
+        ORDER BY m.{tri} DESC, m.score DESC
+        LIMIT {PAR_PAGE} OFFSET {page_m * PAR_PAGE}""", tuple(params))
+    premier, dernier = page_m * PAR_PAGE + 1, page_m * PAR_PAGE + len(res_m)
+    st.caption(f"Joueurs ayant joué au moins {minutes_min} min à ce poste entre le {debut:%d/%m/%Y} et le "
+               f"{fin:%d/%m/%Y} (données de matchs publiées le {fin:%d/%m/%Y}) : **{premier} à {dernier}** "
+               f"sur {total_m}, classés par {tri_monitoring.lower()}. 👉 Clique sur une ligne pour ouvrir la "
+               "fiche : sa fiche de saison, plus le niveau de chacun de ses matchs de la période.")
+    event = st.dataframe(
+        res_m, hide_index=True, width="stretch", height=430, key=f"tableau_mon_{page_m}",
+        on_select="rerun", selection_mode="single-row",
+        column_order=["rang", "nom", "club", "competition", "pays", "niveau", "matchs", "minutes", "score",
+                      "performance", "perf_brute", "score_saison", "aj_niveau", "aj_age", "confiance",
+                      "corrigees", "age", "pied_fort"],
+        column_config={
+            "rang": st.column_config.NumberColumn("Rang", format="%d",
+                                                  help="Rang au Score parmi tous les joueurs du poste actifs "
+                                                       "sur la période, avant tes filtres."),
+            "matchs": st.column_config.NumberColumn("Matchs", help="Matchs joués à ce poste sur la période."),
+            "minutes": st.column_config.NumberColumn("Min", format="%d"),
+            "score": st.column_config.ProgressColumn(
+                "Score période", min_value=0, max_value=120, format="%.1f",
+                help="Performance sur la période + niveau du club + âge : même formule et même échelle que "
+                     "le Score de saison."),
+            "performance": st.column_config.NumberColumn(
+                "Performance", format="%.1f",
+                help="Performance terrain sur la période, après les garde-fous petits échantillons (c'est "
+                     "elle qui entre dans le Score). 50 = joueur médian du poste."),
+            "perf_brute": st.column_config.NumberColumn(
+                "Perf. brute", format="%.1f",
+                help="La même période sans les garde-fous du monitoring : ce qu'il a montré, bruit compris. "
+                     "Très au-dessus de la performance retenue = gros match(s) sur peu de temps de jeu."),
+            "score_saison": st.column_config.NumberColumn("Score saison", format="%.1f",
+                                                          help="Score de sa fiche de saison."),
+            "aj_niveau": st.column_config.NumberColumn("Aj. niveau", format="%+.1f"),
+            "aj_age": st.column_config.NumberColumn("Aj. âge", format="%+.1f"),
+            "confiance": st.column_config.ProgressColumn(
+                "Fiabilité", min_value=0, max_value=100, format="%.0f %%",
+                help="Part du signal conservée : 30 % sous un match plein, 60 % à 400 min, 100 % à 15 "
+                     "matchs."),
+            "corrigees": st.column_config.NumberColumn(
+                "Métr. corrigées", help="Métriques ramenées dans la plage de confiance (plus étroite à "
+                                        "petit volume)."),
+        })
+    if n_pages_m > 1:
+        p1, p2, p3 = st.columns([1, 2, 1])
+        if p1.button("◀ 500 précédents", disabled=page_m == 0, width="stretch", key="mon_prec"):
+            st.session_state["page"] = page_m - 1
+            st.rerun()
+        p2.markdown(f"<div style='text-align:center;padding-top:6px'>Page {page_m + 1} / {n_pages_m}</div>",
+                    unsafe_allow_html=True)
+        if p3.button("500 suivants ▶", disabled=page_m >= n_pages_m - 1, width="stretch", key="mon_suiv"):
+            st.session_state["page"] = page_m + 1
+            st.rerun()
+    st.download_button("Télécharger la page affichée (CSV)", res_m.to_csv(index=False).encode("utf-8"),
+                       f"monitoring_{archetype}_{periode}j.csv", "text/csv")
+    st.divider()
+    lignes = event.selection["rows"] if event and "rows" in event.selection else []
+    carte_monitoring(res_m.iloc[lignes[0] if lignes else 0])
+
+
 club_param = st.query_params.get("club")
 fiche_param = st.query_params.get("fiche")
 
-# ----------------------------------------------------------------- vue fiche
-# Ouverte depuis "Ses autres saisons" : prime sur la vue club et la recherche,
-# le bouton retour ramene la ou l'on etait (effectif du club ou recherche).
-if fiche_param:
-    try:
-        _p, _s, _i, _pos, _a = fiche_param.split("~")
-        cle_fiche = (int(_p), int(_s), int(_i), _pos, _a)
-    except ValueError:
-        cle_fiche = None
-    ligne = (requete(f"""SELECT {CHAMPS} FROM v_joueurs
-        WHERE playerId=? AND squadId=? AND iterationId=? AND position=? AND archetype=?""", cle_fiche)
-             if cle_fiche else pd.DataFrame())
-    if st.button("← Retour à l'effectif" if club_param else "← Retour à la recherche"):
-        del st.query_params["fiche"]
-        st.rerun()
-    if ligne.empty:
-        st.error("Fiche introuvable : le lien vient peut-être d'avant une mise à jour des données.")
-    else:
-        carte_joueur(ligne.iloc[0])
-
-# ----------------------------------------------------------------- vue club
-elif club_param:
-    squad_id, iter_id = (int(x) for x in club_param.split("-"))
-    entete = requete("""SELECT club, competition, saison, pays, niveau,
-            round(club_rating,3) AS rating, count(*) AS lignes
-        FROM v_joueurs WHERE squadId=? AND iterationId=? GROUP BY ALL""", (squad_id, iter_id))
-    if entete.empty:
-        st.error("Club introuvable."); st.stop()
-    e = entete.iloc[0]
-    if st.button("← Retour à la recherche"):
-        st.query_params.clear(); st.rerun()
-    st.title(f"🏟️ {e.club}")
-    st.caption(f"{e.competition} · {e.saison}"
-               + (f" · {e.pays}" if pd.notna(e.pays) else "")
-               + f" · rating club {n_(e.rating, '{:.3f}')}")
-
-    effectif = requete(f"""SELECT {CHAMPS} FROM v_joueurs
-        WHERE squadId=? AND iterationId=?
-        QUALIFY row_number() OVER (PARTITION BY playerId ORDER BY {SC} DESC) = 1
-        ORDER BY position, {SC} DESC""", (squad_id, iter_id))
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Joueurs", len(effectif))
-    m2.metric(f"{COURT} médiane", n_(effectif["score"].median()))
-    m3.metric("Âge médian", n_(effectif["age"].median()))
-    st.caption("👉 Clique sur une ligne pour ouvrir la fiche du joueur.")
-    ev = st.dataframe(
-        effectif, hide_index=True, width="stretch", height=430, key="effectif",
-        on_select="rerun", selection_mode="single-row",
-        column_order=["nom", "poste", "archetype_courant", "profil_principal", "score", "age", "minutes",
-                      "pied_fort", "performance", "progression", "gros_matchs"],
-        column_config={"score": st.column_config.ProgressColumn(
-            lecture, min_value=0, max_value=120, format="%.1f"),
-            "archetype_courant": st.column_config.TextColumn("Archétype"),
-            "profil_principal": st.column_config.TextColumn("Profil RCSC")})
-    st.divider()
-    sel = ev.selection["rows"] if ev and "rows" in ev.selection else []
-    carte_joueur(effectif.iloc[sel[0] if sel else 0])
-
-else:
-    # ------------------------------------------------------------- vue joueurs
-    st.title(f"{archetype} — {ARCHETYPES[archetype]}")
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Joueurs trouvés", f"{total}")
-    c2.metric(f"{COURT} médiane", n_(stats["med"]))
-    c3.metric(f"Meilleure {COURT.lower()}", n_(stats["max_"]))
-    c4.metric("Âge médian", n_(stats["age_med"]))
-
-    if res.empty:
-        st.warning("Aucun joueur ne correspond à ces filtres.")
-        st.stop()
-
-    res = res.copy()
-    res["archetype_courant"] = archetype
-    premier, dernier = page * PAR_PAGE + 1, page * PAR_PAGE + len(res)
-    if profil_id:
-        _tri = "correspondance au profil" if tri_profil == "Correspondance" else lecture.lower()
-        st.caption(f"Joueurs **{premier} à {dernier}** sur {total} qui correspondent au profil "
-                   f"**{_choix_profil}**, classés par {_tri}. 👉 Clique sur une ligne pour ouvrir la fiche.")
-        _colonnes_profil = ["corr_profil"]
-    else:
-        st.caption(f"Joueurs **{premier} à {dernier}** sur {total}, classés par {lecture.lower()}. "
-                   "👉 Clique sur une ligne pour ouvrir la fiche du joueur.")
-        _colonnes_profil = ["profil_principal"]
-    event = st.dataframe(
-        res, hide_index=True, width="stretch", height=430, key=f"tableau_{page}",
-        on_select="rerun", selection_mode="single-row",
-        column_order=["nom", "club", "competition", "pays", "niveau", "saison",
-                      "score"] + (["role_milieu"] if archetype in ("SIX", "EIGHT") else [])
-                     + _colonnes_profil + [("score_v8" if SC == "qualite_actuelle" else "qualite"),
-                      "age", "minutes", "pied_fort", "performance", "aj_niveau", "aj_age",
-                      "aj_traduction", "progression", "gros_matchs", "coef_adv", "rang_mondial"],
-        column_config={
-            "score": st.column_config.ProgressColumn(lecture, min_value=0, max_value=120, format="%.1f",
-                                                     help=LECTURES[lecture]["aide"]),
-            "qualite": st.column_config.NumberColumn("Qualité", format="%.1f",
-                                                     help=LECTURES["Qualité actuelle (niveau JPL)"]["aide"]),
-            "score_v8": st.column_config.NumberColumn(
-                "Score", format="%.1f", help=LECTURES["Score (performance + niveau + âge)"]["aide"]),
-            "aj_niveau": st.column_config.NumberColumn(
-                "Aj. niveau", format="%+.1f",
-                help="Ajustement du Score pour le niveau du club : 40 points par point de rating "
-                     "d'écart avec la référence (0,49), linéaire."),
-            "aj_traduction": st.column_config.NumberColumn(
-                "Trad. JPL", format="%+.1f",
-                help="Traduction au niveau JPL (lecture Qualité actuelle) : de combien sa performance "
-                     "baisserait (ou monterait) dans un club moyen de JPL, pente mesurée sur les "
-                     "transferts réels."),
-            "role_milieu": st.column_config.TextColumn(
-                "Rôle", help="Rôle qu'Impect lui attribue le plus souvent : 6 (milieu défensif) ou 8 "
-                             "(milieu central), au moins 2/3 du temps de jeu ; 6/8 sinon."),
-            "profil_principal": st.column_config.TextColumn(
-                "Profil RCSC", help="Profil du poste dont la correspondance est la plus haute. "
-                                    "Détail dans la fiche."),
-            "corr_profil": st.column_config.ProgressColumn(
-                "Correspondance", min_value=0, max_value=100, format="%.0f",
-                help="Ressemblance au profil (0-100) : un style, pas un niveau."),
-            "gros_matchs": st.column_config.NumberColumn("Gros matchs", help="Écart de niveau entre ses matchs contre le top du championnat et ses autres matchs, en percentile du poste : 75+ = élève son niveau contre les gros, 25- = baisse. Détail dans la fiche."),
-            "progression": st.column_config.NumberColumn("Progression", help="Évolution réelle estimée (points de niveau) entre ses ~10 derniers matchs et le reste de la saison, hasard retiré : au-delà de ±3 = changement notable. Courbe dans la fiche."),
-            "coef_adv": st.column_config.NumberColumn("Coef adv.", help="Coefficient adversaire moyen : >1 = calendrier plus dur que son club"),
-        })
-    if n_pages > 1:
-        p1, p2, p3 = st.columns([1, 2, 1])
-        if p1.button("◀ 500 précédents", disabled=page == 0, width="stretch"):
-            st.session_state["page"] = page - 1
+# Chaque vue s'affiche dans l'onglet ouvert. Une fiche ou un effectif ouvert
+# depuis le Monitoring y reste : le bouton retour ramene au classement.
+with (onglet_mon if MONITORING else onglet_saison):
+    # ----------------------------------------------------------------- vue fiche
+    # Ouverte depuis "Ses autres saisons" : prime sur la vue club et la recherche,
+    # le bouton retour ramene la ou l'on etait (effectif du club ou recherche).
+    if fiche_param:
+        try:
+            _p, _s, _i, _pos, _a = fiche_param.split("~")
+            cle_fiche = (int(_p), int(_s), int(_i), _pos, _a)
+        except ValueError:
+            cle_fiche = None
+        ligne = (requete(f"""SELECT {CHAMPS} FROM v_joueurs
+            WHERE playerId=? AND squadId=? AND iterationId=? AND position=? AND archetype=?""", cle_fiche)
+                 if cle_fiche else pd.DataFrame())
+        if st.button("← Retour à l'effectif" if club_param else "← Retour à la recherche"):
+            del st.query_params["fiche"]
             st.rerun()
-        p2.markdown(f"<div style='text-align:center;padding-top:6px'>Page {page + 1} / {n_pages}</div>",
-                    unsafe_allow_html=True)
-        if p3.button("500 suivants ▶", disabled=page >= n_pages - 1, width="stretch"):
-            st.session_state["page"] = page + 1
-            st.rerun()
+        if ligne.empty:
+            st.error("Fiche introuvable : le lien vient peut-être d'avant une mise à jour des données.")
+        else:
+            carte_joueur(ligne.iloc[0])
 
-    d1, d2, d3 = st.columns([2, 2, 1])
-    d1.download_button("Télécharger la page affichée (CSV)", res.to_csv(index=False).encode("utf-8"),
-                       f"scouting_{archetype}.csv", "text/csv", width="stretch")
-    clubs = res[["club", "squadId", "iterationId"]].drop_duplicates().sort_values("club")
-    club_choisi = d2.selectbox("Voir l'effectif d'un club", ["—"] + clubs["club"].tolist(),
-                               label_visibility="collapsed")
-    if club_choisi != "—" and d3.button("🏟️ Ouvrir", width="stretch"):
-        c_ = clubs[clubs["club"] == club_choisi].iloc[0]
-        st.query_params["club"] = f"{int(c_.squadId)}-{int(c_.iterationId)}"
-        st.rerun()
-    st.divider()
-    lignes = event.selection["rows"] if event and "rows" in event.selection else []
-    carte_joueur(res.iloc[lignes[0] if lignes else 0])
+    # ----------------------------------------------------------------- vue club
+    elif club_param:
+        squad_id, iter_id = (int(x) for x in club_param.split("-"))
+        entete = requete("""SELECT club, competition, saison, pays, niveau,
+                round(club_rating,3) AS rating, count(*) AS lignes
+            FROM v_joueurs WHERE squadId=? AND iterationId=? GROUP BY ALL""", (squad_id, iter_id))
+        if entete.empty:
+            st.error("Club introuvable."); st.stop()
+        e = entete.iloc[0]
+        if st.button("← Retour à la recherche"):
+            st.query_params.clear(); st.rerun()
+        st.title(f"🏟️ {e.club}")
+        st.caption(f"{e.competition} · {e.saison}"
+                   + (f" · {e.pays}" if pd.notna(e.pays) else "")
+                   + f" · rating club {n_(e.rating, '{:.3f}')}")
+
+        effectif = requete(f"""SELECT {CHAMPS} FROM v_joueurs
+            WHERE squadId=? AND iterationId=?
+            QUALIFY row_number() OVER (PARTITION BY playerId ORDER BY {SC} DESC) = 1
+            ORDER BY position, {SC} DESC""", (squad_id, iter_id))
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Joueurs", len(effectif))
+        m2.metric(f"{COURT} médiane", n_(effectif["score"].median()))
+        m3.metric("Âge médian", n_(effectif["age"].median()))
+        st.caption("👉 Clique sur une ligne pour ouvrir la fiche du joueur.")
+        ev = st.dataframe(
+            effectif, hide_index=True, width="stretch", height=430, key="effectif",
+            on_select="rerun", selection_mode="single-row",
+            column_order=["nom", "poste", "archetype_courant", "profil_principal", "score", "age", "minutes",
+                          "pied_fort", "performance", "progression", "gros_matchs"],
+            column_config={"score": st.column_config.ProgressColumn(
+                lecture, min_value=0, max_value=120, format="%.1f"),
+                "archetype_courant": st.column_config.TextColumn("Archétype"),
+                "profil_principal": st.column_config.TextColumn("Profil RCSC")})
+        st.divider()
+        sel = ev.selection["rows"] if ev and "rows" in ev.selection else []
+        carte_joueur(effectif.iloc[sel[0] if sel else 0])
+
+    elif MONITORING:
+        vue_monitoring()
+
+    else:
+        # ------------------------------------------------------------- vue joueurs
+        st.title(f"{archetype} — {ARCHETYPES[archetype]}")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Joueurs trouvés", f"{total}")
+        c2.metric(f"{COURT} médiane", n_(stats["med"]))
+        c3.metric(f"Meilleure {COURT.lower()}", n_(stats["max_"]))
+        c4.metric("Âge médian", n_(stats["age_med"]))
+
+        if res.empty:
+            st.warning("Aucun joueur ne correspond à ces filtres.")
+            st.stop()
+
+        res = res.copy()
+        res["archetype_courant"] = archetype
+        premier, dernier = page * PAR_PAGE + 1, page * PAR_PAGE + len(res)
+        if profil_id:
+            _tri = "correspondance au profil" if tri_profil == "Correspondance" else lecture.lower()
+            st.caption(f"Joueurs **{premier} à {dernier}** sur {total} qui correspondent au profil "
+                       f"**{_choix_profil}**, classés par {_tri}. 👉 Clique sur une ligne pour ouvrir la fiche.")
+            _colonnes_profil = ["corr_profil"]
+        else:
+            st.caption(f"Joueurs **{premier} à {dernier}** sur {total}, classés par {lecture.lower()}. "
+                       "👉 Clique sur une ligne pour ouvrir la fiche du joueur.")
+            _colonnes_profil = ["profil_principal"]
+        event = st.dataframe(
+            res, hide_index=True, width="stretch", height=430, key=f"tableau_{page}",
+            on_select="rerun", selection_mode="single-row",
+            column_order=["nom", "club", "competition", "pays", "niveau", "saison",
+                          "score"] + (["role_milieu"] if archetype in ("SIX", "EIGHT") else [])
+                         + _colonnes_profil + [("score_v8" if SC == "qualite_actuelle" else "qualite"),
+                          "age", "minutes", "pied_fort", "performance", "aj_niveau", "aj_age",
+                          "aj_traduction", "progression", "gros_matchs", "coef_adv", "rang_mondial"],
+            column_config={
+                "score": st.column_config.ProgressColumn(lecture, min_value=0, max_value=120, format="%.1f",
+                                                         help=LECTURES[lecture]["aide"]),
+                "qualite": st.column_config.NumberColumn("Qualité", format="%.1f",
+                                                         help=LECTURES["Qualité actuelle (niveau JPL)"]["aide"]),
+                "score_v8": st.column_config.NumberColumn(
+                    "Score", format="%.1f", help=LECTURES["Score (performance + niveau + âge)"]["aide"]),
+                "aj_niveau": st.column_config.NumberColumn(
+                    "Aj. niveau", format="%+.1f",
+                    help="Ajustement du Score pour le niveau du club : 40 points par point de rating "
+                         "d'écart avec la référence (0,49), linéaire."),
+                "aj_traduction": st.column_config.NumberColumn(
+                    "Trad. JPL", format="%+.1f",
+                    help="Traduction au niveau JPL (lecture Qualité actuelle) : de combien sa performance "
+                         "baisserait (ou monterait) dans un club moyen de JPL, pente mesurée sur les "
+                         "transferts réels."),
+                "role_milieu": st.column_config.TextColumn(
+                    "Rôle", help="Rôle qu'Impect lui attribue le plus souvent : 6 (milieu défensif) ou 8 "
+                                 "(milieu central), au moins 2/3 du temps de jeu ; 6/8 sinon."),
+                "profil_principal": st.column_config.TextColumn(
+                    "Profil RCSC", help="Profil du poste dont la correspondance est la plus haute. "
+                                        "Détail dans la fiche."),
+                "corr_profil": st.column_config.ProgressColumn(
+                    "Correspondance", min_value=0, max_value=100, format="%.0f",
+                    help="Ressemblance au profil (0-100) : un style, pas un niveau."),
+                "gros_matchs": st.column_config.NumberColumn("Gros matchs", help="Écart de niveau entre ses matchs contre le top du championnat et ses autres matchs, en percentile du poste : 75+ = élève son niveau contre les gros, 25- = baisse. Détail dans la fiche."),
+                "progression": st.column_config.NumberColumn("Progression", help="Évolution réelle estimée (points de niveau) entre ses ~10 derniers matchs et le reste de la saison, hasard retiré : au-delà de ±3 = changement notable. Courbe dans la fiche."),
+                "coef_adv": st.column_config.NumberColumn("Coef adv.", help="Coefficient adversaire moyen : >1 = calendrier plus dur que son club"),
+            })
+        if n_pages > 1:
+            p1, p2, p3 = st.columns([1, 2, 1])
+            if p1.button("◀ 500 précédents", disabled=page == 0, width="stretch"):
+                st.session_state["page"] = page - 1
+                st.rerun()
+            p2.markdown(f"<div style='text-align:center;padding-top:6px'>Page {page + 1} / {n_pages}</div>",
+                        unsafe_allow_html=True)
+            if p3.button("500 suivants ▶", disabled=page >= n_pages - 1, width="stretch"):
+                st.session_state["page"] = page + 1
+                st.rerun()
+
+        d1, d2, d3 = st.columns([2, 2, 1])
+        d1.download_button("Télécharger la page affichée (CSV)", res.to_csv(index=False).encode("utf-8"),
+                           f"scouting_{archetype}.csv", "text/csv", width="stretch")
+        clubs = res[["club", "squadId", "iterationId"]].drop_duplicates().sort_values("club")
+        club_choisi = d2.selectbox("Voir l'effectif d'un club", ["—"] + clubs["club"].tolist(),
+                                   label_visibility="collapsed")
+        if club_choisi != "—" and d3.button("🏟️ Ouvrir", width="stretch"):
+            c_ = clubs[clubs["club"] == club_choisi].iloc[0]
+            st.query_params["club"] = f"{int(c_.squadId)}-{int(c_.iterationId)}"
+            st.rerun()
+        st.divider()
+        lignes = event.selection["rows"] if event and "rows" in event.selection else []
+        carte_joueur(res.iloc[lignes[0] if lignes else 0])
 
 # ----------------------------------------------------------------- mes listes
 st.divider()
