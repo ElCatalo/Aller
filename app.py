@@ -64,9 +64,8 @@ LOGO_RCSC = next((p for p in (_ICI / "logo_rcsc.png", _ICI.parent / "logo_rcsc.p
 # s affichait alors en texte sur la page (bug constate le 03/10/2026).
 _CSS_RCSC = """<style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
-:root{--encre:#0C0C0D;--encre-2:#3A3C40;--encre-3:#71757B;--papier:#FBFBF9;--carte:#FFFFFF;--trait:#E2E2DD;--trait-fort:#C9C9C2;--surbrillance:#F2F2EE;--mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;--sans:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}
-@media (prefers-color-scheme:dark){:root{--encre:#F2F2EF;--encre-2:#B9BBBE;--encre-3:#83868B;--papier:#0C0C0D;--carte:#151618;--trait:#26272B;--trait-fort:#3A3C40;--surbrillance:#1C1D20;}}
-html,body,[data-testid="stAppViewContainer"],[data-testid="stSidebar"]{background:var(--papier);color:var(--encre);font-family:var(--sans);font-feature-settings:"ss01","cv01","tnum";}
+:root{color-scheme:light;--encre:#0C0C0D;--encre-2:#3A3C40;--encre-3:#71757B;--papier:#FBFBF9;--carte:#FFFFFF;--trait:#E2E2DD;--trait-fort:#C9C9C2;--surbrillance:#F2F2EE;--mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;--sans:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}
+html,body,.stApp,[data-testid="stAppViewContainer"],[data-testid="stMain"],[data-testid="stSidebar"],[data-testid="stSidebarContent"]{background:#FBFBF9!important;color:var(--encre);font-family:var(--sans);font-feature-settings:"ss01","cv01","tnum";}
 [data-testid="stHeader"]{background:transparent;border-bottom:1px solid var(--trait);}
 [data-testid="stAppViewContainer"] .block-container{padding-top:1.4rem;max-width:1480px;}
 h1,h2,h3{font-family:var(--sans);letter-spacing:-.022em;color:var(--encre);font-weight:600;}
@@ -74,7 +73,7 @@ h1{font-size:1.72rem;font-weight:700;}
 h2{font-size:1.24rem;}
 h3{font-size:1.04rem;}
 h4,h5{font-family:var(--mono);font-size:.72rem!important;letter-spacing:.13em;text-transform:uppercase;color:var(--encre-3);font-weight:600;margin:1.5rem 0 .5rem;}
-p,li,label,span,div{color:var(--encre);}
+p,li,label{color:var(--encre);}
 small,[data-testid="stCaptionContainer"],[data-testid="stCaptionContainer"] p{color:var(--encre-3)!important;font-size:.795rem;line-height:1.5;}
 a{color:var(--encre);text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:2px;text-decoration-color:var(--trait-fort);}
 a:hover{text-decoration-color:var(--encre);}
@@ -98,19 +97,28 @@ code,kbd{font-family:var(--mono);font-size:.82em;background:var(--surbrillance);
 [data-baseweb="tag"]{background:var(--encre)!important;color:var(--papier)!important;border-radius:3px!important;font-family:var(--mono);font-size:.72rem!important;}
 [data-baseweb="tag"] svg{fill:var(--papier)!important;}
 .stButton>button,.stDownloadButton>button{border-radius:4px;border:1px solid var(--trait-fort);background:var(--carte);color:var(--encre);font-weight:500;font-size:.82rem;padding:.36rem .8rem;box-shadow:none;transition:border-color .12s,background .12s;}
+.stButton>button p,.stDownloadButton>button p{color:inherit!important;margin:0;}
 .stButton>button:hover,.stDownloadButton>button:hover{border-color:var(--encre);background:var(--surbrillance);color:var(--encre);}
 .stButton>button[kind="primary"]{background:var(--encre);color:var(--papier);border-color:var(--encre);}
+.stButton>button[kind="primary"] p,.stButton>button[kind="primary"] div,.stButton>button[kind="primary"] span{color:var(--papier)!important;}
+[data-testid="stFormSubmitButton"]>button{background:var(--encre);color:var(--papier);border-color:var(--encre);font-weight:600;}
+[data-testid="stFormSubmitButton"]>button p,[data-testid="stFormSubmitButton"]>button div,[data-testid="stFormSubmitButton"]>button span{color:var(--papier)!important;}
+[data-testid="stFormSubmitButton"]>button:hover{background:var(--encre-2);border-color:var(--encre-2);}
 .stButton>button[kind="primary"]:hover{background:var(--encre-2);border-color:var(--encre-2);color:var(--papier);}
 [data-testid="stSidebar"] .stButton>button{text-align:left;justify-content:flex-start;border:none;border-bottom:1px solid var(--trait);border-radius:0;padding:.4rem .15rem;font-size:.8rem;background:transparent;}
 [data-testid="stSidebar"] .stButton>button:hover{background:var(--surbrillance);border-bottom-color:var(--encre);}
-.stTabs [data-baseweb="tab-list"]{gap:1.45rem;border-bottom:1px solid var(--trait);}
-.stTabs [data-baseweb="tab"]{background:transparent!important;padding:.5rem 0 .55rem;font-family:var(--mono);font-size:.76rem;letter-spacing:.075em;text-transform:uppercase;font-weight:500;color:var(--encre-3);}
-.stTabs [aria-selected="true"]{color:var(--encre)!important;font-weight:600;}
-.stTabs [data-baseweb="tab-highlight"]{background:var(--encre);height:2px;}
+/* onglets : lisibles d abord -- ils portent la navigation principale */
+.stTabs [data-baseweb="tab-list"]{gap:1.9rem;border-bottom:1px solid var(--trait);margin-bottom:.4rem;}
+.stTabs [data-baseweb="tab"]{background:transparent!important;padding:.6rem 0 .65rem;font-family:var(--sans);font-size:.95rem;letter-spacing:-.01em;font-weight:500;color:var(--encre-2)!important;}
+.stTabs [data-baseweb="tab"]:hover{color:var(--encre)!important;}
+.stTabs [data-baseweb="tab"] p{font-size:.95rem!important;font-weight:500;color:inherit!important;}
+.stTabs [aria-selected="true"]{color:var(--encre)!important;font-weight:700;}
+.stTabs [aria-selected="true"] p{font-weight:700!important;color:var(--encre)!important;}
+.stTabs [data-baseweb="tab-highlight"]{background:var(--encre);height:2.5px;}
 .stTabs [data-baseweb="tab-border"]{display:none;}
-[data-testid="stMetric"]{background:var(--carte);border:1px solid var(--trait);border-radius:5px;padding:.68rem .85rem;}
+[data-testid="stMetric"]{background:#FFFFFF;border:1px solid var(--trait);border-radius:5px;padding:.68rem .85rem;}
 [data-testid="stMetricLabel"] p{font-family:var(--mono)!important;font-size:.66rem!important;letter-spacing:.11em;text-transform:uppercase;color:var(--encre-3)!important;font-weight:600;}
-[data-testid="stMetricValue"]{font-family:var(--mono);font-weight:600;font-size:1.42rem;letter-spacing:-.018em;color:var(--encre);}
+[data-testid="stMetricValue"]{font-family:var(--mono);font-weight:600;font-size:1.5rem;letter-spacing:-.018em;color:var(--encre);}
 [data-testid="stMetricDelta"]{font-family:var(--mono);font-size:.76rem;}
 [data-testid="stDataFrame"]{border:1px solid var(--trait);border-radius:5px;}
 [data-testid="stDataFrame"] [role="columnheader"]{background:var(--surbrillance)!important;font-family:var(--mono)!important;font-size:.68rem!important;letter-spacing:.075em;text-transform:uppercase;color:var(--encre-3)!important;font-weight:600;}
@@ -121,6 +129,8 @@ div[data-testid="stAlert"]{border-radius:5px;border:1px solid var(--trait);backg
 hr{border-color:var(--trait);margin:1.3rem 0;}
 [data-testid="stSliderTickBarMin"],[data-testid="stSliderTickBarMax"]{font-family:var(--mono);font-size:.66rem;color:var(--encre-3);}
 [data-baseweb="slider"] [role="slider"]{background:var(--encre)!important;border-color:var(--encre)!important;}
+/* ecran de connexion : respiration verticale */
+.rcsc-accueil{padding-top:4.5rem;}
 </style>"""
 st.markdown(_CSS_RCSC, unsafe_allow_html=True)
 
@@ -248,6 +258,7 @@ def authentifier() -> None:
     # Ecran d'accueil centre : blason, rayures, puis le formulaire. Rien d'autre.
     _, _mid, _ = st.columns([1, 1.25, 1])
     with _mid:
+        st.markdown("<div class='rcsc-accueil'></div>", unsafe_allow_html=True)
         marque("Plateforme de scouting", taille=58, grand=True)
         rayures()
     if not _comptes():
