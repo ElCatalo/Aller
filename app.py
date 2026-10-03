@@ -24,6 +24,7 @@ import duckdb
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import plotly.io as pio
 import streamlit as st
 
 _ICI = Path(__file__).resolve().parent
@@ -39,7 +40,229 @@ ARCHETYPES = {"GK": "Gardien", "CB": "Défenseur central", "FB": "Latéral", "WG
               "SIX": "Milieu défensif (6)", "EIGHT": "Milieu relayeur (8)",
               "TEN": "Meneur offensif (10)", "NINE": "Avant-centre (9)"}
 
-st.set_page_config(page_title="Scouting Impect — Charleroi", page_icon="🦓", layout="wide")
+st.set_page_config(page_title="Scouting Impect — Charleroi", page_icon="🦓", layout="wide",
+                   initial_sidebar_state="expanded")
+
+# =============================================================================
+# IDENTITE VISUELLE -- RCSC, noir et blanc (02/10/2026)
+# =============================================================================
+# Tout tient dans app.py a dessein : le deploiement ne copie que ce fichier et
+# les deux bases (cf. preparer_deploiement.py), un .streamlit/config.toml ne
+# suivrait pas sur Streamlit Cloud. Le theme est donc en CSS injecte, et il
+# s'adapte au mode clair ET sombre du navigateur.
+#
+# Charte : encre quasi noire sur papier blanc cassé, une seule couleur d'accent
+# (le noir lui-meme), zero couleur decorative. Les rayures noir/blanc du
+# Sporting -- les Zebres -- servent de motif de separation et d'en-tete.
+# Le vert/rouge reste reserve aux ecarts chiffres (progression, verdicts).
+LOGO_RCSC = next((p for p in (_ICI / "logo_rcsc.png", _ICI.parent / "logo_rcsc.png",
+                              _ICI / "logo_rcsc.svg", _ICI.parent / "logo_rcsc.svg")
+                  if p.exists()), None)
+
+st.markdown("""
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --encre:#0C0C0D; --encre-2:#3A3C40; --encre-3:#71757B;
+  --papier:#FBFBF9; --carte:#FFFFFF; --trait:#E2E2DD; --trait-fort:#C9C9C2;
+  --surbrillance:#F2F2EE;
+  --vert:#1E6F43; --rouge:#9A2B33; --ambre:#8A6400;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --sans:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --encre:#F2F2EF; --encre-2:#B9BBBE; --encre-3:#83868B;
+    --papier:#0C0C0D; --carte:#151618; --trait:#26272B; --trait-fort:#3A3C40;
+    --surbrillance:#1C1D20;
+    --vert:#5FBE87; --rouge:#E08A91; --ambre:#D9AE4B;
+  }
+}
+
+/* ---------- socle ---------- */
+html,body,[data-testid="stAppViewContainer"],[data-testid="stSidebar"]{
+  background:var(--papier); color:var(--encre);
+  font-family:var(--sans); font-feature-settings:"ss01","cv01","tnum";
+}
+[data-testid="stHeader"]{background:transparent; border-bottom:1px solid var(--trait);}
+[data-testid="stAppViewContainer"] .block-container{padding-top:1.4rem; max-width:1480px;}
+h1,h2,h3,h4{font-family:var(--sans); letter-spacing:-.022em; color:var(--encre); font-weight:600;}
+h1{font-size:1.72rem; font-weight:700;}
+h2{font-size:1.24rem;}
+h3{font-size:1.04rem;}
+/* Micro-titres de section : capitales espacees, codes d'une fiche de scouting */
+h4,h5{font-family:var(--mono); font-size:.72rem!important; letter-spacing:.13em;
+  text-transform:uppercase; color:var(--encre-3); font-weight:600; margin:1.5rem 0 .5rem;}
+p,li,label,span,div{color:var(--encre);}
+small,.stCaption,[data-testid="stCaptionContainer"],[data-testid="stCaptionContainer"] p{
+  color:var(--encre-3)!important; font-size:.795rem; line-height:1.5;}
+a{color:var(--encre); text-decoration:underline; text-decoration-thickness:1px;
+  text-underline-offset:2px; text-decoration-color:var(--trait-fort);}
+a:hover{text-decoration-color:var(--encre);}
+code,kbd{font-family:var(--mono); font-size:.82em; background:var(--surbrillance);
+  padding:.08em .34em; border-radius:3px; border:1px solid var(--trait);}
+
+/* ---------- rayures du Sporting : le seul motif decoratif ---------- */
+.rcsc-rayures{height:5px; margin:0 0 1.15rem;
+  background:repeating-linear-gradient(90deg,var(--encre) 0 11px,transparent 11px 22px);
+  opacity:.9;}
+.rcsc-rayures.fine{height:3px;
+  background:repeating-linear-gradient(90deg,var(--encre) 0 7px,transparent 7px 14px);
+  opacity:.5; margin:.35rem 0 1rem;}
+.rcsc-marque{display:flex; align-items:center; gap:.62rem; margin:.1rem 0 .1rem;}
+.rcsc-marque .blason{width:34px; height:34px; flex:none;}
+.rcsc-marque .nom{font-family:var(--mono); font-weight:600; font-size:.88rem;
+  letter-spacing:.1em; text-transform:uppercase; line-height:1.15;}
+.rcsc-marque .sous{font-family:var(--mono); font-size:.66rem; letter-spacing:.11em;
+  text-transform:uppercase; color:var(--encre-3);}
+
+/* ---------- barre laterale ---------- */
+[data-testid="stSidebar"]{border-right:1px solid var(--trait);}
+[data-testid="stSidebar"] .block-container{padding-top:1.1rem;}
+[data-testid="stSidebar"] h1{font-size:1rem!important; letter-spacing:.09em;
+  font-family:var(--mono); text-transform:uppercase; font-weight:600;}
+/* Les intitules de filtres : petites capitales, lisibles sans crier */
+[data-testid="stSidebar"] label p{font-size:.775rem!important; font-weight:500;
+  color:var(--encre-2)!important; letter-spacing:.005em;}
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] strong{
+  font-family:var(--mono); font-size:.7rem; letter-spacing:.13em; text-transform:uppercase;
+  color:var(--encre-3); font-weight:600;}
+[data-testid="stSidebar"] hr{border-color:var(--trait);}
+
+/* ---------- champs ---------- */
+[data-baseweb="input"],[data-baseweb="select"]>div,[data-baseweb="textarea"]{
+  border-radius:4px!important; border-color:var(--trait-fort)!important;
+  background:var(--carte)!important;}
+[data-baseweb="input"]:focus-within,[data-baseweb="select"]>div:focus-within{
+  border-color:var(--encre)!important; box-shadow:none!important;}
+[data-baseweb="tag"]{background:var(--encre)!important; color:var(--papier)!important;
+  border-radius:3px!important; font-family:var(--mono); font-size:.72rem!important;}
+[data-baseweb="tag"] svg{fill:var(--papier)!important;}
+
+/* ---------- boutons : plats, sans ombre, hairline ---------- */
+.stButton>button,.stDownloadButton>button{
+  border-radius:4px; border:1px solid var(--trait-fort); background:var(--carte);
+  color:var(--encre); font-weight:500; font-size:.82rem; padding:.36rem .8rem;
+  box-shadow:none; transition:border-color .12s,background .12s;}
+.stButton>button:hover,.stDownloadButton>button:hover{
+  border-color:var(--encre); background:var(--surbrillance); color:var(--encre);}
+.stButton>button[kind="primary"]{background:var(--encre); color:var(--papier);
+  border-color:var(--encre);}
+.stButton>button[kind="primary"]:hover{background:var(--encre-2); border-color:var(--encre-2);
+  color:var(--papier);}
+/* Resultats de recherche : lignes, pas boutons -- on lit une liste */
+[data-testid="stSidebar"] .stButton>button{text-align:left; justify-content:flex-start;
+  border:none; border-bottom:1px solid var(--trait); border-radius:0;
+  padding:.4rem .15rem; font-size:.8rem; background:transparent;}
+[data-testid="stSidebar"] .stButton>button:hover{background:var(--surbrillance);
+  border-bottom-color:var(--encre);}
+
+/* ---------- onglets : soulignement, pas de pilules ---------- */
+.stTabs [data-baseweb="tab-list"]{gap:1.45rem; border-bottom:1px solid var(--trait);}
+.stTabs [data-baseweb="tab"]{background:transparent!important; padding:.5rem 0 .55rem;
+  font-family:var(--mono); font-size:.76rem; letter-spacing:.075em; text-transform:uppercase;
+  font-weight:500; color:var(--encre-3);}
+.stTabs [aria-selected="true"]{color:var(--encre)!important; font-weight:600;}
+.stTabs [data-baseweb="tab-highlight"]{background:var(--encre); height:2px;}
+.stTabs [data-baseweb="tab-border"]{display:none;}
+
+/* ---------- indicateurs chiffres ---------- */
+[data-testid="stMetric"]{background:var(--carte); border:1px solid var(--trait);
+  border-radius:5px; padding:.68rem .85rem;}
+[data-testid="stMetricLabel"] p{font-family:var(--mono)!important; font-size:.66rem!important;
+  letter-spacing:.11em; text-transform:uppercase; color:var(--encre-3)!important; font-weight:600;}
+[data-testid="stMetricValue"]{font-family:var(--mono); font-weight:600; font-size:1.42rem;
+  letter-spacing:-.018em; color:var(--encre);}
+[data-testid="stMetricDelta"]{font-family:var(--mono); font-size:.76rem;}
+
+/* ---------- tableaux : chiffres alignes, lignes serrees ---------- */
+[data-testid="stDataFrame"]{border:1px solid var(--trait); border-radius:5px;}
+[data-testid="stDataFrame"] [role="columnheader"]{background:var(--surbrillance)!important;
+  font-family:var(--mono)!important; font-size:.68rem!important; letter-spacing:.075em;
+  text-transform:uppercase; color:var(--encre-3)!important; font-weight:600;}
+[data-testid="stDataFrame"] [role="gridcell"]{font-size:.815rem; font-variant-numeric:tabular-nums;}
+
+/* ---------- conteneurs, encadres, messages ---------- */
+[data-testid="stExpander"]{border:1px solid var(--trait)!important; border-radius:5px;
+  background:var(--carte);}
+[data-testid="stExpander"] summary{font-size:.84rem; font-weight:500;}
+[data-testid="stVerticalBlockBorderWrapper"]>div>[data-testid="stVerticalBlock"]{gap:.6rem;}
+div[data-testid="stAlert"]{border-radius:5px; border:1px solid var(--trait);
+  background:var(--carte); color:var(--encre); font-size:.83rem;}
+hr{border-color:var(--trait); margin:1.3rem 0;}
+[data-testid="stSliderTickBarMin"],[data-testid="stSliderTickBarMax"]{
+  font-family:var(--mono); font-size:.66rem; color:var(--encre-3);}
+[data-baseweb="slider"] [role="slider"]{background:var(--encre)!important;
+  border-color:var(--encre)!important;}
+
+/* ---------- barres de progression dans les tableaux ---------- */
+[data-testid="stDataFrame"] [role="gridcell"] div[style*="background"]{border-radius:2px;}
+</style>
+""", unsafe_allow_html=True)
+
+
+def rayures(fine: bool = False) -> None:
+    """Separateur raye noir/blanc -- le maillot du Sporting."""
+    st.markdown(f"<div class='rcsc-rayures{' fine' if fine else ''}'></div>",
+                unsafe_allow_html=True)
+
+
+# --- Graphiques : meme charte que le reste -----------------------------------
+# Plotly ne lit pas le CSS : sans template, les courbes repartent sur la
+# palette par defaut (bleu/orange) et cassent l'ensemble. Un seul template
+# gris/noir, enregistre comme defaut, suffit -- les traces qui imposent deja
+# leur couleur (vert/rouge des ecarts) ne sont pas touchees.
+_ENCRE, _PAPIER_G, _TRAIT_G, _GRIS = "#0C0C0D", "rgba(0,0,0,0)", "#E2E2DD", "#71757B"
+# Serie categorielle en degrade de gris : lisible en noir et blanc, et
+# differenciable a l'impression (une comparaison de 5 joueurs reste lisible).
+SEQUENCE_RCSC = ["#0C0C0D", "#6B6E73", "#A8ABAF", "#3A3C40", "#8E9195"]
+pio.templates["rcsc"] = go.layout.Template(layout=dict(
+    font=dict(family="Inter, -apple-system, Segoe UI, sans-serif", size=12, color=_ENCRE),
+    paper_bgcolor=_PAPIER_G, plot_bgcolor=_PAPIER_G,
+    colorway=SEQUENCE_RCSC,
+    xaxis=dict(gridcolor=_TRAIT_G, zerolinecolor=_TRAIT_G, linecolor=_TRAIT_G,
+               tickfont=dict(size=11, color=_GRIS), title_font=dict(size=11, color=_GRIS)),
+    yaxis=dict(gridcolor=_TRAIT_G, zerolinecolor=_TRAIT_G, linecolor=_TRAIT_G,
+               tickfont=dict(size=11, color=_GRIS), title_font=dict(size=11, color=_GRIS)),
+    legend=dict(font=dict(size=11), bgcolor=_PAPIER_G, borderwidth=0),
+    hoverlabel=dict(font=dict(family="Inter, sans-serif", size=12),
+                    bgcolor="#FFFFFF", bordercolor=_TRAIT_G),
+    margin=dict(t=18, b=8, l=8, r=8),
+))
+pio.templates.default = "plotly_white+rcsc"
+px.defaults.color_discrete_sequence = SEQUENCE_RCSC
+
+
+# Blason : monogramme raye dessine en SVG, pas le vrai ecusson (marque deposee,
+# et un fichier binaire ne doit pas finir dans un depot public). Si un
+# logo_rcsc.png/svg est pose a cote d'app.py ou a la racine, il prend le relais.
+_BLASON_SVG = """
+<svg class="blason" viewBox="0 0 40 44" fill="none" xmlns="http://www.w3.org/2000/svg"
+     role="img" aria-label="Sporting de Charleroi">
+  <path d="M2 2h36v26c0 8-8 12-18 14C10 40 2 36 2 28V2z"
+        fill="none" stroke="currentColor" stroke-width="2.4"/>
+  <mask id="ecu"><path d="M2 2h36v26c0 8-8 12-18 14C10 40 2 36 2 28V2z" fill="#fff"/></mask>
+  <g mask="url(#ecu)">
+    <rect x="6"  y="0" width="5" height="44" fill="currentColor"/>
+    <rect x="17" y="0" width="5" height="44" fill="currentColor"/>
+    <rect x="28" y="0" width="5" height="44" fill="currentColor"/>
+  </g>
+</svg>"""
+
+
+def marque(sous_titre: str = "Scouting · Impect") -> None:
+    """En-tete de marque : blason + nom du club."""
+    if LOGO_RCSC is not None:
+        c1, c2 = st.columns([1, 4], vertical_alignment="center")
+        c1.image(str(LOGO_RCSC), width=38)
+        c2.markdown(f"<div class='rcsc-marque'><div><div class='nom'>Sporting de Charleroi</div>"
+                    f"<div class='sous'>{sous_titre}</div></div></div>", unsafe_allow_html=True)
+    else:
+        st.markdown(f"<div class='rcsc-marque'>{_BLASON_SVG}"
+                    f"<div><div class='nom'>Sporting<br>de Charleroi</div>"
+                    f"<div class='sous'>{sous_titre}</div></div></div>", unsafe_allow_html=True)
 
 
 # ----------------------------------------------------------------- acces
@@ -81,7 +304,11 @@ def _mot_de_passe_ok(utilisateur: str, mot_de_passe: str) -> bool:
 def authentifier() -> None:
     if st.session_state.get("connecte"):
         return
-    st.title("🦓 Scouting Impect — Charleroi")
+    # Ecran d'accueil centre : blason, rayures, puis le formulaire. Rien d'autre.
+    _, _mid, _ = st.columns([1, 1.25, 1])
+    with _mid:
+        marque("Plateforme de scouting")
+        rayures()
     if not _comptes():
         en_ligne = "/mount/src" in str(_ICI)
         if en_ligne:
@@ -97,14 +324,17 @@ def authentifier() -> None:
                      f"`{_ICI / '.streamlit' / 'secrets.toml'}`, "
                      f"`{_ICI.parent / '.streamlit' / 'secrets.toml'}`")
         st.stop()
-    with st.form("connexion"):
-        u = st.text_input("Utilisateur")
-        m = st.text_input("Mot de passe", type="password")
-        if st.form_submit_button("Se connecter"):
-            if _mot_de_passe_ok(u, m):
-                st.session_state["connecte"] = u
-                st.rerun()
-            st.error("Identifiants incorrects.")
+    _, _mid, _ = st.columns([1, 1.25, 1])
+    with _mid:
+        with st.form("connexion", border=False):
+            u = st.text_input("Utilisateur")
+            m = st.text_input("Mot de passe", type="password")
+            if st.form_submit_button("Se connecter", width="stretch", type="primary"):
+                if _mot_de_passe_ok(u, m):
+                    st.session_state["connecte"] = u
+                    st.rerun()
+                st.error("Identifiants incorrects.")
+        st.caption("Accès réservé à la cellule recrutement.")
     st.stop()
 
 
@@ -162,21 +392,33 @@ MON = params_monitoring()
 # ----------------------------------------------------------------- onglets
 # Onglets a execution paresseuse : seul l'onglet ouvert calcule sa page, et la
 # barre laterale s'adapte (periode et minutes sur la periode en Monitoring).
-onglet_saison, onglet_mon = st.tabs(["📊 Scouting saison", "📡 Monitoring"],
+onglet_saison, onglet_mon = st.tabs(["Scouting saison", "Monitoring"],
                                     key="onglet", on_change="rerun")
 MONITORING = bool(onglet_mon.open)
 
 # ----------------------------------------------------------------- filtres
-st.sidebar.title("🦓 Scouting Impect")
-st.sidebar.caption(f"Données calculées le {genere_le}")
-st.sidebar.caption(f"Connecté : {st.session_state['connecte']}")
-if st.sidebar.button("Se déconnecter"):
-    st.session_state.clear(); st.rerun()
+with st.sidebar:
+    marque("Scouting · Impect")
+    rayures(fine=True)
+    st.caption(f"Données du {genere_le} · {st.session_state['connecte']}")
+    if st.button("Se déconnecter", width="stretch"):
+        st.session_state.clear(); st.rerun()
+    st.markdown("**Recherche & poste**")
 
 # Libelle inclus dans l'option (plutot que format_func) : identique a l'ecran,
 # mais pilotable par les tests automatises de Streamlit.
+_OPT_ARCH = [f"{a} — {n}" for a, n in ARCHETYPES.items()]
+# Saut de poste demande ailleurs dans la page (recherche globale, shortlist) :
+# un widget deja affiche ne peut plus etre modifie, la valeur est donc posee
+# ici, AVANT la creation du selecteur, et consommee au rerun.
+if _a := st.session_state.pop("_archetype_a_appliquer", None):
+    for _o in _OPT_ARCH:
+        if _o.startswith(f"{_a} —"):
+            st.session_state["archetype_sel"] = _o
 archetype = st.sidebar.selectbox(
-    "Poste / archétype", [f"{a} — {n}" for a, n in ARCHETYPES.items()], index=1).split(" — ")[0]
+    "Poste / archétype", _OPT_ARCH,
+    index=1 if "archetype_sel" not in st.session_state else None,
+    key="archetype_sel").split(" — ")[0]
 
 # Monitoring : fenetre de N jours avant la date des donnees (derniere
 # synchronisation du run V10), precalculee pour chaque N de PERIODES.
@@ -213,6 +455,29 @@ SC, RG, PCT, COURT = (LECTURES[lecture][k] for k in ("col", "rang", "pct", "cour
 
 
 @st.cache_data(ttl=600)
+@st.cache_data(show_spinner=False)
+def pression_dispo() -> bool:
+    """La base contient-elle le jeu sous pression (cf. Etude_Pression_Passes) ?"""
+    try:
+        requete("SELECT pct_part_prog_fp FROM v_joueurs LIMIT 1")
+        return True
+    except duckdb.Error:
+        return False
+
+
+@st.cache_data(show_spinner=False)
+def pression_fiabilite() -> dict:
+    """Fidelite mesuree de chaque metrique de pression (matchs pairs vs impairs,
+    corrigee Spearman-Brown). Affichee dans la fiche : au-dessus de 0,6 la
+    mesure decrit le joueur, en dessous elle decrit surtout son equipe."""
+    try:
+        f = requete("SELECT metrique, avg(fiabilite_saison) AS f FROM fiabilite_pression "
+                    "GROUP BY metrique")
+        return dict(zip(f["metrique"], f["f"]))
+    except duckdb.Error:
+        return {}
+
+
 def catalogue_profils() -> pd.DataFrame:
     """Profils RCSC du catalogue (vide si la base date d'avant les profils)."""
     try:
@@ -249,7 +514,69 @@ else:
     tri_profil = st.sidebar.radio("Classer les joueurs du profil par", [COURT, "Correspondance"],
                                   horizontal=True, disabled=profil_id is None)
     saison = st.sidebar.multiselect("Saison", saisons, default=[s for s in saisons if s in ("25/26", "2026")])
-recherche = st.sidebar.text_input("Recherche par nom", placeholder="ex. Beitia")
+recherche = st.sidebar.text_input(
+    "Recherche par nom", placeholder="ex. Beitia",
+    help="Cherche dans TOUS les postes. Les résultats s'affichent juste en dessous : "
+         "un clic ouvre la fiche et bascule le classement sur le bon poste.")
+
+
+@st.cache_data(show_spinner=False)
+def chercher_partout(texte: str, saisons_filtre: tuple) -> pd.DataFrame:
+    """Tous les joueurs-saison dont le nom correspond, TOUS POSTES confondus.
+
+    L'ancien comportement ne cherchait que dans l'archetype ouvert : un joueur
+    classe ailleurs restait introuvable sans avoir devine son poste. Ici on
+    interroge la base entiere, et un joueur qui existe sous plusieurs
+    archetypes sort autant de fois -- a lui de choisir lequel il veut voir,
+    plutot que de deviner a sa place (un CB qui apparait aussi en FB n'est pas
+    le meme dossier).
+    """
+    ou, pa = ["lower(nom) LIKE ?"], [f"%{texte.lower()}%"]
+    if saisons_filtre:
+        ou.append(f"saison IN ({','.join('?' * len(saisons_filtre))})"); pa += list(saisons_filtre)
+    return requete(f"""
+        SELECT nom, club, competition, saison, archetype, position,
+               round(score,1) AS score, round(score_percentile,1) AS pct,
+               round(age_years,1) AS age, minutes_jouees AS minutes, rang_archetype AS rang,
+               playerId, squadId, iterationId
+        FROM v_joueurs WHERE {' AND '.join(ou)}
+        ORDER BY score DESC LIMIT 60""", tuple(pa))
+
+
+if recherche and len(recherche.strip()) >= 2:
+    _trouves = chercher_partout(recherche.strip(), tuple(saison))
+    with st.sidebar.container(border=True):
+        if _trouves.empty:
+            st.caption(f"Aucun joueur pour « {recherche} »"
+                       + (" sur les saisons sélectionnées." if saison else "."))
+        else:
+            _joueurs = _trouves["nom"].nunique()
+            _postes = sorted(_trouves["archetype"].unique())
+            st.caption(f"**{len(_trouves)} résultat(s)** · {_joueurs} joueur(s) · "
+                       f"postes : {', '.join(_postes)}")
+            if len(_postes) > 1:
+                st.caption("⚠️ Ce nom sort sur plusieurs postes : choisis la ligne qui t'intéresse.")
+            for _r in _trouves.head(20).itertuples():
+                _ici = _r.archetype == archetype
+                _sc = f"{_r.score:.0f}" if pd.notna(_r.score) else "—"
+                if st.button(
+                        f"{'📍 ' if _ici else ''}{_r.nom} · **{_r.archetype}** — {_r.club} "
+                        f"({_r.saison}) · {_sc}",
+                        key=f"go_{_r.playerId}_{_r.squadId}_{_r.iterationId}_{_r.archetype}",
+                        width="stretch",
+                        help=f"{_r.competition} · {_r.position} · rang {_r.rang} de son poste · "
+                             f"{_r.minutes:.0f} min · {_r.age:.0f} ans"):
+                    # Bascule le classement sur le bon poste ET ouvre la fiche :
+                    # le bouton "Retour" ramene donc sur la bonne liste.
+                    # (ouvrir_fiche() est definie plus bas dans le fichier, on
+                    # pose directement le parametre d'URL qu'elle utilise.)
+                    st.session_state["_archetype_a_appliquer"] = _r.archetype
+                    st.query_params["fiche"] = "~".join(str(v) for v in (
+                        int(_r.playerId), int(_r.squadId), int(_r.iterationId),
+                        _r.position, _r.archetype))
+                    st.rerun()
+            if len(_trouves) > 20:
+                st.caption(f"…et {len(_trouves) - 20} autres : précise le nom.")
 
 st.sidebar.markdown("**Championnats**")
 exclure_top5 = st.sidebar.checkbox("Exclure les 5 grands championnats", value=False)
@@ -298,6 +625,11 @@ def con_listes():
         liste VARCHAR, playerId BIGINT, nom VARCHAR, club VARCHAR, poste VARCHAR,
         archetype VARCHAR, score DOUBLE PRECISION, ajoute_le TIMESTAMP,
         supprimee_le TIMESTAMP, supprimee_par VARCHAR)""")
+    # Annotations de scouting (ajoutees 02/10/2026) : une note libre et une
+    # priorite par joueur dans une liste. En ADD COLUMN IF NOT EXISTS pour ne
+    # rien casser sur les bases deja remplies (syntaxe commune DuckDB/Postgres).
+    for _col, _type in (("note", "VARCHAR"), ("priorite", "VARCHAR")):
+        c.execute(f"ALTER TABLE listes ADD COLUMN IF NOT EXISTS {_col} {_type}")
     return c
 
 
@@ -336,8 +668,41 @@ def listes_noms() -> list[str]:
 
 def contenu(liste: str) -> pd.DataFrame:
     return pd.DataFrame(sql_listes(
-        "SELECT nom, club, poste, archetype, score, playerId FROM listes WHERE liste=? ORDER BY score DESC",
-        [liste]), columns=["nom", "club", "poste", "archetype", "score", "playerId"])
+        "SELECT nom, club, poste, archetype, score, playerId, note, priorite, ajoute_le "
+        "FROM listes WHERE liste=? ORDER BY score DESC", [liste]),
+        columns=["nom", "club", "poste", "archetype", "score", "playerId",
+                 "note", "priorite", "ajoute_le"])
+
+
+PRIORITES = ["", "🔴 Priorité", "🟡 À suivre", "🔵 Vivier"]
+
+
+def annoter(liste: str, player_id: int, note: str | None, priorite: str | None) -> None:
+    sql_listes("UPDATE listes SET note=?, priorite=? WHERE liste=? AND playerId=?",
+               [note or None, priorite or None, liste, int(player_id)])
+
+
+def deplacer(src: str, dest: str, player_ids: list[int], copier: bool = False) -> int:
+    """Copie (ou deplace) des joueurs d'une liste vers une autre.
+
+    Ecrase la cible pour ces joueurs plutot que de creer un doublon : la meme
+    ligne deux fois dans une liste n'a aucun sens et casse les retraits.
+    """
+    n = 0
+    for pid in player_ids:
+        ligne = sql_listes("SELECT nom, club, poste, archetype, score, note, priorite "
+                           "FROM listes WHERE liste=? AND playerId=?", [src, int(pid)])
+        if not ligne:
+            continue
+        nom, club, poste, arch, score, note, prio = ligne[0]
+        sql_listes("DELETE FROM listes WHERE liste=? AND playerId=?", [dest, int(pid)])
+        sql_listes("INSERT INTO listes (liste, playerId, nom, club, poste, archetype, score, "
+                   "ajoute_le, note, priorite) VALUES (?,?,?,?,?,?,?,now(),?,?)",
+                   [dest, int(pid), nom, club, poste, arch, score, note, prio])
+        if not copier:
+            sql_listes("DELETE FROM listes WHERE liste=? AND playerId=?", [src, int(pid)])
+        n += 1
+    return n
 
 
 def ids_exclus() -> list[int]:
@@ -346,7 +711,10 @@ def ids_exclus() -> list[int]:
 
 def ajouter(liste: str, j) -> None:
     sql_listes("DELETE FROM listes WHERE liste=? AND playerId=?", [liste, int(j.playerId)])
-    sql_listes("INSERT INTO listes VALUES (?,?,?,?,?,?,?,now())",
+    # Colonnes nommees : la table gagne des colonnes au fil des versions
+    # (note, priorite), un INSERT positionnel casserait a la prochaine.
+    sql_listes("INSERT INTO listes (liste, playerId, nom, club, poste, archetype, score, ajoute_le) "
+               "VALUES (?,?,?,?,?,?,?,now())",
                [liste, int(j.playerId), _txt(j.nom), _txt(j.club), _txt(j.poste),
                 _txt(j.archetype_courant), None if pd.isna(j.score) else float(j.score)])
 
@@ -391,7 +759,7 @@ if not LISTES_URL and "/mount/src" in str(_ICI):
                        "`[listes]` dans Settings → Secrets.")
 if _message := st.session_state.pop("_message_listes", None):
     st.toast(_message)
-NOUVELLE_LISTE = "➕ nouvelle liste…"
+NOUVELLE_LISTE = "+ nouvelle liste…"
 _noms = listes_noms()
 _options = _noms + [NOUVELLE_LISTE]
 # Un widget deja affiche ne peut plus etre modifie : apres un renommage ou une
@@ -407,10 +775,10 @@ shortlist = st.sidebar.selectbox("Shortlist active", _options, key="shortlist_ac
 if shortlist == NOUVELLE_LISTE:
     shortlist = st.sidebar.text_input("Nom de la nouvelle liste", value="Shortlist") or "Shortlist"
 else:
-    with st.sidebar.expander("⚙️ Gérer la liste"):
+    with st.sidebar.expander("Gérer la liste"):
         st.caption("Les changements s'appliquent à **tous les comptes**.")
         nouveau_nom = st.text_input("Nouveau nom", value=shortlist, key=f"nouveau_nom_{shortlist}")
-        if st.button("✏️ Renommer", key=f"renommer_{shortlist}", width="stretch"):
+        if st.button("Renommer", key=f"renommer_{shortlist}", width="stretch"):
             erreur = renommer_liste(shortlist, nouveau_nom)
             if erreur:
                 st.error(erreur)
@@ -422,7 +790,7 @@ else:
         _n = len(contenu(shortlist))
         confirme = st.checkbox(f"Oui, supprimer « {shortlist} » ({_n} joueur{'s' if _n > 1 else ''}) "
                                "pour tous les comptes", key=f"confirmer_{shortlist}")
-        if st.button("🗑️ Supprimer définitivement", key=f"supprimer_{shortlist}",
+        if st.button("Supprimer définitivement", key=f"supprimer_{shortlist}",
                      disabled=not confirme, width="stretch"):
             supprimer_liste(shortlist, st.session_state["connecte"])
             st.session_state["_liste_suivante"] = ""          # -> premiere liste restante
@@ -441,6 +809,23 @@ else:
     minutes_min = st.sidebar.slider("Minutes minimum", 400, 3000, 900, step=100)
 pieds = st.sidebar.multiselect("Pied fort", ["droit", "gauche", "les deux"])
 score_min = st.sidebar.slider(f"{COURT} minimum", 0, 100, 0, step=5)
+
+# Jeu sous pression (Etude_Pression_Passes) : filtre de STYLE, il ne change
+# aucun score ni aucun classement, il restreint seulement la liste.
+PRESSION_FILTRES = {
+    "—": None,
+    "Progresse sous pression (P≥70)": "pct_part_prog_fp >= 70",
+    "Garde son ambition sous pression (P≥70)": "pct_part_prog_fp >= 70 AND maintien_ambition >= 0.8",
+    "Résiste sous pression (P≥70)": "pct_reussite_fp_vs_attendu_100 >= 70",
+    "Élimine des adversaires (P≥70)": "pct_bypassed_vs_attendu_p90 >= 70",
+    "Prudent sous pression (P≤30)": "pct_part_prog_fp BETWEEN 0 AND 30",
+}
+filtre_pression = "—"
+if not MONITORING and pression_dispo():
+    filtre_pression = st.sidebar.selectbox(
+        "Jeu sous pression", list(PRESSION_FILTRES),
+        help="Filtre de style, descriptif : il ne modifie ni le score ni le classement. "
+             "Percentiles calculés par poste sur une centaine de championnats.")
 
 # Memes filtres pour les deux onglets ; seuls le volume (saison / periode) et
 # l'age different : le monitoring garde les joueurs sans date de naissance
@@ -465,6 +850,8 @@ if niveaux:
     where.append(f"niveau IN ({','.join('?' * len(niveaux))})"); params += [float(n) for n in niveaux]
 if pieds:
     where.append(f"pied_fort IN ({','.join('?' * len(pieds))})"); params += pieds
+if PRESSION_FILTRES.get(filtre_pression):
+    where.append(PRESSION_FILTRES[filtre_pression])
 _exclus = ids_exclus()
 if masquer_exclus and _exclus:
     where.append(f"playerId NOT IN ({','.join('?' * len(_exclus))})"); params += _exclus
@@ -979,7 +1366,8 @@ def section_profils(cle: tuple) -> None:
         notes.append(f"Lecture dans le pool {arch} : dans un autre pool de milieu, ses profils peuvent différer.")
     notes.append("Correspondance = ressemblance de style (0-100), pas un niveau : le niveau reste le score. "
                  "Vigilance = point d'attention sur un non-négociable du profil ; l'info de style (zones de "
-                 "touches, jeu en retrait) est descriptive, elle ne compte pas dans le score.")
+                 "touches, jeu en retrait, jeu sous pression) est descriptive, elle ne compte pas dans le "
+                 "score.")
     st.caption("  \n".join(notes))
 
     with st.expander(f"Détail des {len(prof)} profils du poste"):
@@ -998,6 +1386,112 @@ def section_profils(cle: tuple) -> None:
             })
 
 
+PRESSION_LIGNES = [
+    ("pct_pression_passe", "pression_passe", "Pression subie à la passe", "{:.1f}",
+     "Pression adverse moyenne (0-100) au moment où il donne le ballon. Décrit surtout son rôle "
+     "et sa zone de jeu."),
+    ("pct_part_prog_fp", "part_prog_fp", "Passes progressives sous pression", "{:.0f} %",
+     "Part de ses passes sous forte pression (≥ 50) qui gagnent du terrain vers le but. C'est "
+     "l'audace : sous pression, la moyenne des championnats tombe à 23 %."),
+    (None, "maintien_ambition", "Maintien de l'ambition", "{:.2f}",
+     "Cette part rapportée à la même part sans pression. 1,00 = il joue pareil pressé ou libre ; "
+     "0,69 est la médiane des championnats."),
+    ("pct_reussite_fp_vs_attendu_100", "reussite_fp_vs_attendu_100", "Réussite sous pression vs attendu",
+     "{:+.1f}", "Passes réussies au-dessus de l'attendu, pour 100 passes sous forte pression, à poste, "
+     "zone et distance comparables."),
+    ("pct_bypassed_vs_attendu_p90", "bypassed_vs_attendu_p90", "Adversaires éliminés vs attendu / 90",
+     "{:+.1f}", "Packing : adversaires entre le ballon et le but qu'il supprime par ses passes, "
+     "au-dessus de l'attendu."),
+    ("pct_prog_fp_p90", "prog_fp_p90", "Passes progressives sous pression / 90", "{:.1f}",
+     "Volume brut, très dépendant du volume de jeu de l'équipe."),
+    (None, "entrees_surface_p90", "Entrées dans la surface / 90", "{:.2f}",
+     "Passes réussies qui font entrer le ballon dans la surface adverse."),
+]
+
+
+def section_pression(j) -> None:
+    """Bloc « Sous pression » : descriptif, hors score.
+
+    Diagnostic du 30/09/2026 (5 056 joueurs suivis d'une saison a l'autre) : ces
+    metriques ne sont pas redondantes avec le score (|rho| <= 0,27 a championnat
+    et archetype fixes) mais n'ont presque aucune valeur predictive une fois le
+    score connu (+0,4 point de R2 la ou le score en explique 15,5). Elles sont
+    donc affichees comme contexte et comme style, et n'entrent dans aucun calcul.
+    """
+    if not pression_dispo():
+        return
+    try:
+        pz = requete("""SELECT p.* FROM fait_pression p
+            JOIN dim_poste_pression m USING (pos)
+            WHERE p.playerId = ? AND p.iterationId = ? AND m.position = ?""",
+                     (int(j.playerId), int(j.iterationId), j.position))
+    except duckdb.Error:
+        return
+    if pz.empty:
+        st.markdown("#### 🫸 Sous pression")
+        st.caption("Pas assez de volume à ce poste : le jeu sous pression est calculé à partir de "
+                   "300 passes, et la partie progression à partir de 600 minutes (270 en saison en "
+                   "cours) et 15 passes progressives sous forte pression.")
+        return
+    d = pz.iloc[0]
+
+    st.markdown("#### 🫸 Sous pression")
+    lignes = []
+    for cle_pct, cle_val, libelle, fmt, aide in PRESSION_LIGNES:
+        val = d.get(cle_val)
+        if val is None or pd.isna(val):
+            continue
+        pct = d.get(cle_pct) if cle_pct else None
+        lignes.append({"indicateur": libelle, "valeur": fmt.format(val),
+                       "percentile": float(pct) if pct is not None and pd.notna(pct) and pct >= 0 else None,
+                       "lecture": aide})
+    if not lignes:
+        return
+    st.dataframe(pd.DataFrame(lignes), hide_index=True, width="stretch",
+                 column_config={
+                     "indicateur": st.column_config.TextColumn("Indicateur"),
+                     "valeur": st.column_config.TextColumn("Valeur", width="small"),
+                     "percentile": st.column_config.ProgressColumn(
+                         "Percentile du poste", min_value=0, max_value=100, format="P%.0f"),
+                     "lecture": st.column_config.TextColumn("Comment le lire", width="large")})
+
+    # Contexte de traduction : pression subie a ce poste ici vs en JPL, meme jeu de saisons.
+    try:
+        ctx = requete("""SELECT c.pression_passe AS ici, c.pression_reception AS ici_r,
+                   r.pression_passe AS jpl, r.pression_reception AS jpl_r
+            FROM dim_pression_championnat c
+            JOIN dim_pression_championnat r
+              ON r.pos = c.pos AND r.jeu_saisons = c.jeu_saisons
+            JOIN dim_saison s ON s.iterationId = r.iterationId
+            WHERE c.iterationId = ? AND c.pos = ? AND s.competition = 'Jupiler Pro League'""",
+                      (int(j.iterationId), d["pos"]))
+    except duckdb.Error:
+        ctx = pd.DataFrame()
+
+    notes = []
+    if not ctx.empty and pd.notna(ctx.iloc[0]["jpl"]) and j.competition != "Jupiler Pro League":
+        r = ctx.iloc[0]
+        dp, dr = r["jpl"] - r["ici"], r["jpl_r"] - r["ici_r"]
+        sens = "plus" if dp > 0 else "moins"
+        sens_r = "plus" if dr > 0 else "moins"
+        notes.append(f"**Traduction vers la JPL** : à ce poste, la JPL presse **{abs(dp):.1f} point"
+                     f"{'s' if abs(dp) >= 2 else ''} {sens}** à la passe et **{abs(dr):.1f} "
+                     f"{sens_r}** à la réception qu'en {j.competition}. Mesuré sur 5 308 transferts, "
+                     "cet écart n'explique pas la perte de performance (rho 0,007) : c'est un "
+                     "contexte de lecture, pas une prédiction.")
+    notes.append("Ces indicateurs sont **descriptifs : ils n'entrent dans aucun score**. Mesurés sur "
+                 "5 056 joueurs suivis d'une saison à l'autre, ils n'ajoutent que 0,4 point de R² "
+                 "pour prédire la saison suivante, quand le score en explique 15,5.")
+    fia = pression_fiabilite()
+    if fia:
+        fiab_txt = " · ".join(f"{k.replace('_', ' ')} {v:.2f}"
+                              for k, v in sorted(fia.items(), key=lambda x: -x[1]))
+        notes.append(f"Fidélité mesurée (matchs pairs vs impairs) : {fiab_txt}. Au-dessus de 0,60 la "
+                     "mesure décrit le joueur ; en dessous elle décrit surtout son équipe et son "
+                     "volume de jeu.")
+    st.caption("  \n".join(notes))
+
+
 def carte_joueur(j, extra=None) -> None:
     """Fiche complete d'un joueur. j doit porter une colonne archetype_courant.
     extra : fonction affichant un bloc supplementaire sous les boutons (la
@@ -1005,13 +1499,17 @@ def carte_joueur(j, extra=None) -> None:
     arch = j.archetype_courant
     cle = (int(j.playerId), int(j.squadId), int(j.iterationId), j.position, arch)
 
-    st.subheader(j.nom)
+    # En-tete de fiche : identifiant du poste en micro-titre, nom en grand,
+    # rayures, puis la ligne de contexte -- meme grammaire que les classements.
+    st.markdown(f"#### Fiche joueur · {arch}")
+    st.markdown(f"## {j.nom}")
     lieu = f"{j.club} · {j.competition}"
     if pd.notna(j.pays):
         lieu += f" ({j.pays}" + (f", D{int(j.niveau)})" if pd.notna(j.niveau) else ")")
     role = (f" · rôle Impect {j.role_milieu}" if arch in ("SIX", "EIGHT") and pd.notna(j.role_milieu) else "")
     st.caption(f"{lieu} · {j.saison} · {j.poste}" + (f" ({j.side})" if pd.notna(j.side) else "")
                + f" · archétype {arch}{role}")
+    rayures(fine=True)
 
     # Acces direct aux fiches des autres saisons (seules existent celles ou il
     # a assez joue a ce poste pour etre evalue par la pipeline).
@@ -1019,7 +1517,7 @@ def carte_joueur(j, extra=None) -> None:
     autres = hist[~hist["courante"]].head(5)
     if not autres.empty:
         c_ = st.columns([1.1] + [1] * len(autres) + [max(0.1, 5 - len(autres))])
-        c_[0].markdown("**📅 Ses autres saisons :**")
+        c_[0].markdown("**Ses autres saisons**")
         for col, h in zip(c_[1:], autres.itertuples()):
             aide = f"{h.competition} · {h.poste} · {h.minutes:.0f} min"
             if h.continuite:
@@ -1060,7 +1558,7 @@ def carte_joueur(j, extra=None) -> None:
         f"{j.aj_traduction:+.1f} traduction au niveau JPL")
 
     b1, b2, b3, b4 = st.columns([1, 1, 1, 2])
-    if b1.button(f"➕ Ajouter à « {shortlist} »", width="stretch", key=f"add_{cle}"):
+    if b1.button(f"Ajouter à « {shortlist} »", width="stretch", key=f"add_{cle}"):
         ajouter(shortlist, j); st.toast(f"{j.nom} ajouté à « {shortlist} »"); st.rerun()
     if b2.button("🚫 Exclure ce joueur", width="stretch", key=f"exc_{cle}",
                  help="Il ne sera plus proposé dans les recherches par poste."):
@@ -1075,6 +1573,7 @@ def carte_joueur(j, extra=None) -> None:
         extra()
 
     section_profils(cle)
+    section_pression(j)
 
     g1, g2 = st.columns([3, 2])
     with g1:
@@ -1394,7 +1893,7 @@ def carte_monitoring(m) -> None:
     st.caption(f"{lieu} · {m.saison} · {m.poste} · archétype {m.archetype_courant}")
     j = m.copy()
     b1, b2, _ = st.columns([1, 1, 3])
-    if b1.button(f"➕ Ajouter à « {shortlist} »", width="stretch", key=f"mon_add_{m.playerId}"):
+    if b1.button(f"Ajouter à « {shortlist} »", width="stretch", key=f"mon_add_{m.playerId}"):
         ajouter(shortlist, j); st.toast(f"{m.nom} ajouté à « {shortlist} »"); st.rerun()
     if b2.button("🚫 Exclure ce joueur", width="stretch", key=f"mon_exc_{m.playerId}"):
         ajouter("exclus", j); st.toast(f"{m.nom} exclu"); st.rerun()
@@ -1409,7 +1908,9 @@ def vue_monitoring() -> None:
                    "puis `publier.py` pour la mettre en ligne.")
         return
     debut, fin = bornes_periode()
-    st.title(f"📡 {archetype} — {ARCHETYPES[archetype]}")
+    st.markdown(f"#### Monitoring {archetype}")
+    st.title(ARCHETYPES[archetype])
+    rayures(fine=True)
     filtre = " AND ".join(where)
     stats_m = requete(f"""SELECT count(*) AS n, median(score) AS med, max(score) AS max_,
                                  median(n_matchs) AS matchs_med
@@ -1526,7 +2027,8 @@ with (onglet_mon if MONITORING else onglet_saison):
         e = entete.iloc[0]
         if st.button("← Retour à la recherche"):
             st.query_params.clear(); st.rerun()
-        st.title(f"🏟️ {e.club}")
+        st.markdown("#### Effectif")
+        st.title(str(e.club))
         st.caption(f"{e.competition} · {e.saison}"
                    + (f" · {e.pays}" if pd.notna(e.pays) else "")
                    + f" · rating club {n_(e.rating, '{:.3f}')}")
@@ -1558,7 +2060,9 @@ with (onglet_mon if MONITORING else onglet_saison):
 
     else:
         # ------------------------------------------------------------- vue joueurs
-        st.title(f"{archetype} — {ARCHETYPES[archetype]}")
+        st.markdown(f"#### Classement {archetype}")
+        st.title(ARCHETYPES[archetype])
+        rayures(fine=True)
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Joueurs trouvés", f"{total}")
         c2.metric(f"{COURT} médiane", n_(stats["med"]))
@@ -1635,7 +2139,7 @@ with (onglet_mon if MONITORING else onglet_saison):
         clubs = res[["club", "squadId", "iterationId"]].drop_duplicates().sort_values("club")
         club_choisi = d2.selectbox("Voir l'effectif d'un club", ["—"] + clubs["club"].tolist(),
                                    label_visibility="collapsed")
-        if club_choisi != "—" and d3.button("🏟️ Ouvrir", width="stretch"):
+        if club_choisi != "—" and d3.button("Ouvrir", width="stretch"):
             c_ = clubs[clubs["club"] == club_choisi].iloc[0]
             st.query_params["club"] = f"{int(c_.squadId)}-{int(c_.iterationId)}"
             st.rerun()
@@ -1644,20 +2148,220 @@ with (onglet_mon if MONITORING else onglet_saison):
         carte_joueur(res.iloc[lignes[0] if lignes else 0])
 
 # ----------------------------------------------------------------- mes listes
+# Refonte 02/10/2026 : la liste n'est plus un tableau mort. Les lignes stockees
+# ne gardent que le nom/club/score du jour de l'ajout -- on les RE-JOINT a
+# v_joueurs pour afficher des valeurs a jour, ouvrir la fiche d'un clic,
+# comparer plusieurs joueurs et deplacer des joueurs entre listes.
 st.divider()
-st.subheader("Mes listes")
-o1, o2 = st.tabs([f"Shortlist « {shortlist} »", "Joueurs exclus"])
-for onglet, nom_liste in ((o1, shortlist), (o2, "exclus")):
-    with onglet:
+
+
+@st.cache_data(show_spinner=False)
+def enrichir_liste(player_ids: tuple, lecture_col: str) -> pd.DataFrame:
+    """Valeurs actuelles des joueurs d'une liste, meilleure ligne par joueur.
+
+    Un joueur peut avoir plusieurs lignes (saisons, postes) : on garde celle de
+    score le plus haut, sinon la liste afficherait des doublons sans que l'on
+    sache lequel est le bon.
+    """
+    if not player_ids:
+        return pd.DataFrame()
+    marques = ",".join("?" * len(player_ids))
+    return requete(f"""
+        SELECT playerId, nom AS nom_actuel, club AS club_actuel, competition, pays, saison,
+               archetype AS archetype_actuel, position AS position_actuelle,
+               round({lecture_col},1) AS score_actuel,
+               round(score_performance,1) AS performance, round(qualite_actuelle,1) AS qualite,
+               round(progression_credible,1) AS progression, round(age_years,1) AS age,
+               minutes_jouees AS minutes, pied_fort, taille_cm, profil_principal,
+               pilier_fort, pilier_faible, rang_archetype AS rang, squadId, iterationId
+        FROM v_joueurs WHERE playerId IN ({marques})
+        QUALIFY row_number() OVER (PARTITION BY playerId ORDER BY {lecture_col} DESC) = 1
+        """, tuple(int(p) for p in player_ids))
+
+
+@st.cache_data(show_spinner=False)
+def piliers_de(cles: tuple) -> pd.DataFrame:
+    """Percentiles par pilier pour un lot de joueurs (comparaison)."""
+    if not cles:
+        return pd.DataFrame()
+    ou = " OR ".join(["(playerId=? AND squadId=? AND iterationId=? AND position=? AND archetype=?)"] * len(cles))
+    pa = [v for c in cles for v in c]
+    return requete(f"SELECT playerId, pilier, poids, percentile FROM fait_pilier WHERE {ou}", tuple(pa))
+
+
+_toutes = listes_noms()
+_onglets_noms = ([shortlist] if shortlist not in _toutes else []) + _toutes
+st.markdown("#### Suivi")
+st.subheader(f"Mes listes · {len(_toutes)}")
+st.caption("Navigue d'une liste à l'autre par les onglets. Les valeurs affichées sont **recalculées "
+           "à chaque build** : un joueur ajouté l'an dernier montre son niveau actuel.")
+_onglets = st.tabs([f"{n} ({len(contenu(n))})" for n in _onglets_noms] + ["Joueurs exclus"])
+
+for _ong, nom_liste in zip(_onglets, _onglets_noms + ["exclus"]):
+    with _ong:
         contenu_df = contenu(nom_liste)
         if contenu_df.empty:
-            st.caption("Liste vide.")
+            st.info("Liste vide. Ajoute des joueurs depuis leur fiche "
+                    f"(bouton « ➕ Ajouter à « {nom_liste} » »).")
             continue
-        st.dataframe(contenu_df.drop(columns=["playerId"]), hide_index=True, width="stretch")
-        a_retirer = st.selectbox("Retirer un joueur", ["—"] + contenu_df["nom"].tolist(),
-                                 key=f"retrait_{nom_liste}")
-        if a_retirer != "—" and st.button("Retirer", key=f"btn_retrait_{nom_liste}"):
-            retirer(nom_liste, contenu_df.loc[contenu_df["nom"] == a_retirer, "playerId"].iloc[0])
-            st.rerun()
-        st.download_button("Exporter (CSV)", contenu_df.to_csv(index=False).encode("utf-8"),
+
+        vivant = enrichir_liste(tuple(contenu_df["playerId"].tolist()), SC)
+        df = contenu_df.merge(vivant, on="playerId", how="left")
+        # Valeurs a jour quand le joueur est encore dans le build, valeurs
+        # figees a l'ajout sinon (joueur sorti du perimetre).
+        df["nom"] = df["nom_actuel"].fillna(df["nom"])
+        df["club"] = df["club_actuel"].fillna(df["club"])
+        df["score_actuel"] = df["score_actuel"].fillna(df["score"])
+        df["archetype"] = df["archetype_actuel"].fillna(df["archetype"])
+        df["position"] = df["position_actuelle"].fillna(df["poste"])
+        df["priorite"] = df["priorite"].fillna("")
+        df["note"] = df["note"].fillna("")
+        _perdus = int(df["squadId"].isna().sum())
+
+        # ---- Synthese de la liste
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric("Joueurs", len(df))
+        k2.metric(f"{COURT} médian", n_(df["score_actuel"].median()))
+        k3.metric("Âge médian", n_(df["age"].median()))
+        k4.metric("Postes", df["archetype"].nunique())
+        _rep = df["archetype"].value_counts()
+        st.caption("Répartition : " + " · ".join(f"**{a}** {n}" for a, n in _rep.items())
+                   + (f"  \n⚠️ {_perdus} joueur(s) absent(s) du dernier build "
+                      "(plus assez de minutes, ou saison non reprise) : valeurs figées à l'ajout."
+                      if _perdus else ""))
+
+        # ---- Tri / filtre interne
+        f1, f2, f3 = st.columns([2, 2, 2])
+        TRIS = {f"{COURT} ▼": ("score_actuel", False), "Progression ▼": ("progression", False),
+                "Âge ▲": ("age", True), "Nom A→Z": ("nom", True),
+                "Ajout récent ▼": ("ajoute_le", False), "Priorité": ("priorite", True)}
+        _tri = f1.selectbox("Trier par", list(TRIS), key=f"tri_{nom_liste}")
+        _col_tri, _asc = TRIS[_tri]
+        _postes_liste = sorted(df["archetype"].dropna().unique())
+        _f_poste = f2.multiselect("Filtrer par poste", _postes_liste, key=f"fp_{nom_liste}")
+        _f_prio = f3.multiselect("Filtrer par priorité",
+                                 [p for p in PRIORITES if p and p in set(df["priorite"])],
+                                 key=f"fpr_{nom_liste}")
+        vue = df.copy()
+        if _f_poste:
+            vue = vue[vue["archetype"].isin(_f_poste)]
+        if _f_prio:
+            vue = vue[vue["priorite"].isin(_f_prio)]
+        vue = vue.sort_values(_col_tri, ascending=_asc, na_position="last").reset_index(drop=True)
+
+        st.caption("👉 Coche une ligne pour ouvrir sa fiche, plusieurs pour comparer ou déplacer.")
+        ev_liste = st.dataframe(
+            vue, hide_index=True, width="stretch", height=min(430, 80 + 36 * len(vue)),
+            key=f"tbl_{nom_liste}", on_select="rerun", selection_mode="multi-row",
+            column_order=["priorite", "nom", "archetype", "club", "competition", "saison",
+                          "score_actuel", "performance", "progression", "age", "minutes",
+                          "pied_fort", "profil_principal", "pilier_fort", "pilier_faible",
+                          "rang", "note"],
+            column_config={
+                "priorite": st.column_config.TextColumn("", width="small"),
+                "score_actuel": st.column_config.ProgressColumn(
+                    COURT, min_value=0, max_value=120, format="%.1f",
+                    help=LECTURES[lecture]["aide"]),
+                "performance": st.column_config.NumberColumn("Perf.", format="%.1f"),
+                "progression": st.column_config.NumberColumn(
+                    "Progr.", format="%+.1f",
+                    help="Évolution réelle estimée entre ses ~10 derniers matchs et le reste "
+                         "de la saison. Au-delà de ±3 = changement notable."),
+                "archetype": st.column_config.TextColumn("Poste"),
+                "profil_principal": st.column_config.TextColumn("Profil RCSC"),
+                "pilier_fort": st.column_config.TextColumn("Point fort"),
+                "pilier_faible": st.column_config.TextColumn("Point faible"),
+                "rang": st.column_config.NumberColumn("Rang", format="%d"),
+                "note": st.column_config.TextColumn("Note", width="medium"),
+            })
+        _sel = ev_liste.selection["rows"] if ev_liste and "rows" in ev_liste.selection else []
+        choisis = vue.iloc[_sel] if _sel else vue.iloc[0:0]
+
+        # ---- Actions groupees
+        with st.container(border=True):
+            if choisis.empty:
+                st.caption("Sélectionne au moins un joueur pour agir dessus.")
+            else:
+                st.markdown(f"**{len(choisis)} sélectionné(s)** : "
+                            + ", ".join(choisis["nom"].astype(str).head(6))
+                            + ("…" if len(choisis) > 6 else ""))
+                a1, a2, a3 = st.columns([2, 2, 2])
+                _ids = [int(x) for x in choisis["playerId"]]
+                if a1.button("Retirer de la liste", key=f"rm_{nom_liste}", width="stretch"):
+                    for _p in _ids:
+                        retirer(nom_liste, _p)
+                    st.toast(f"{len(_ids)} joueur(s) retiré(s) de « {nom_liste} »")
+                    st.rerun()
+                _cibles = [n for n in _toutes if n != nom_liste] or []
+                _dest = a2.selectbox("Vers la liste", ["—"] + _cibles,
+                                     key=f"dest_{nom_liste}", label_visibility="collapsed")
+                c1, c2 = a3.columns(2)
+                if c1.button("Déplacer →", key=f"mv_{nom_liste}", width="stretch",
+                             disabled=_dest == "—"):
+                    n = deplacer(nom_liste, _dest, _ids, copier=False)
+                    st.toast(f"{n} joueur(s) déplacé(s) vers « {_dest} »")
+                    st.rerun()
+                if c2.button("Copier", key=f"cp_{nom_liste}", width="stretch",
+                             disabled=_dest == "—"):
+                    n = deplacer(nom_liste, _dest, _ids, copier=True)
+                    st.toast(f"{n} joueur(s) copié(s) vers « {_dest} »")
+                    st.rerun()
+
+        # ---- Annotation du joueur selectionne
+        if len(choisis) == 1:
+            j_ = choisis.iloc[0]
+            with st.expander(f"Annoter {j_.nom}", expanded=False):
+                n1, n2 = st.columns([1, 3])
+                _p0 = j_["priorite"] if j_["priorite"] in PRIORITES else ""
+                _prio = n1.selectbox("Priorité", PRIORITES, index=PRIORITES.index(_p0),
+                                     key=f"prio_{nom_liste}_{j_.playerId}")
+                _note = n2.text_input("Note", value=str(j_["note"] or ""),
+                                      placeholder="ex. à revoir contre un bloc bas",
+                                      key=f"note_{nom_liste}_{j_.playerId}")
+                if st.button("Enregistrer", key=f"save_{nom_liste}_{j_.playerId}"):
+                    annoter(nom_liste, int(j_.playerId), _note, _prio)
+                    st.toast("Annotation enregistrée")
+                    st.rerun()
+
+        # ---- Comparaison par piliers
+        if 2 <= len(choisis) <= 5:
+            cles = tuple((int(r.playerId), int(r.squadId), int(r.iterationId), r.position, r.archetype)
+                         for r in choisis.itertuples() if pd.notna(r.squadId))
+            pil = piliers_de(cles)
+            if not pil.empty:
+                st.markdown("##### Comparaison par piliers")
+                _memes = choisis["archetype"].nunique() == 1
+                if not _memes:
+                    st.warning("⚠️ Postes différents : les piliers ne portent pas sur les mêmes "
+                               "compétences, la comparaison n'a de sens que pilier par pilier "
+                               "quand le nom est identique.")
+                noms = dict(zip(choisis["playerId"].astype(int), choisis["nom"].astype(str)))
+                pil["joueur"] = pil["playerId"].map(noms)
+                fig = go.Figure()
+                for jn, g in pil.groupby("joueur"):
+                    g = g.sort_values("poids", ascending=False)
+                    fig.add_trace(go.Bar(x=g["pilier"], y=g["percentile"], name=str(jn)))
+                fig.add_hline(y=50, line_dash="dot", line_color="grey")
+                fig.update_layout(barmode="group", height=360, yaxis_title="Percentile du poste",
+                                  yaxis_range=[0, 100], margin=dict(t=10, b=0, l=0, r=0),
+                                  legend=dict(orientation="h", y=1.12))
+                st.plotly_chart(fig, width="stretch")
+                st.caption("50 = médiane du poste. Piliers classés par poids dans le score.")
+        elif len(choisis) > 5:
+            st.caption("Comparaison limitée à 5 joueurs : réduis la sélection.")
+
+        # ---- Ouvrir la fiche
+        if len(choisis) == 1 and pd.notna(choisis.iloc[0].get("squadId")):
+            j_ = choisis.iloc[0]
+            if st.button(f"Ouvrir la fiche de {j_.nom}", key=f"open_{nom_liste}",
+                         width="stretch", type="primary"):
+                st.session_state["_archetype_a_appliquer"] = j_.archetype
+                st.query_params["fiche"] = "~".join(str(v) for v in (
+                    int(j_.playerId), int(j_.squadId), int(j_.iterationId),
+                    j_.position, j_.archetype))
+                st.rerun()
+
+        st.download_button("Exporter la liste (CSV)",
+                           vue.drop(columns=[c for c in ("squadId", "iterationId") if c in vue]).
+                           to_csv(index=False).encode("utf-8"),
                            f"{nom_liste}.csv", "text/csv", key=f"dl_{nom_liste}")
