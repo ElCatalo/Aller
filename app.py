@@ -59,148 +59,70 @@ LOGO_RCSC = next((p for p in (_ICI / "logo_rcsc.png", _ICI.parent / "logo_rcsc.p
                               _ICI / "logo_rcsc.svg", _ICI.parent / "logo_rcsc.svg")
                   if p.exists()), None)
 
-st.markdown("""
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<style>
-:root{
-  --encre:#0C0C0D; --encre-2:#3A3C40; --encre-3:#71757B;
-  --papier:#FBFBF9; --carte:#FFFFFF; --trait:#E2E2DD; --trait-fort:#C9C9C2;
-  --surbrillance:#F2F2EE;
-  --vert:#1E6F43; --rouge:#9A2B33; --ambre:#8A6400;
-  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
-  --sans:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-}
-@media (prefers-color-scheme:dark){
-  :root{
-    --encre:#F2F2EF; --encre-2:#B9BBBE; --encre-3:#83868B;
-    --papier:#0C0C0D; --carte:#151618; --trait:#26272B; --trait-fort:#3A3C40;
-    --surbrillance:#1C1D20;
-    --vert:#5FBE87; --rouge:#E08A91; --ambre:#D9AE4B;
-  }
-}
-
-/* ---------- socle ---------- */
-html,body,[data-testid="stAppViewContainer"],[data-testid="stSidebar"]{
-  background:var(--papier); color:var(--encre);
-  font-family:var(--sans); font-feature-settings:"ss01","cv01","tnum";
-}
-[data-testid="stHeader"]{background:transparent; border-bottom:1px solid var(--trait);}
-[data-testid="stAppViewContainer"] .block-container{padding-top:1.4rem; max-width:1480px;}
-h1,h2,h3,h4{font-family:var(--sans); letter-spacing:-.022em; color:var(--encre); font-weight:600;}
-h1{font-size:1.72rem; font-weight:700;}
+# Injecte en UNE SEULE chaine sans ligne vide : markdown ferme la balise
+# de style des qu il rencontre une ligne vide, et tout le CSS suivant
+# s affichait alors en texte sur la page (bug constate le 03/10/2026).
+_CSS_RCSC = """<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+:root{--encre:#0C0C0D;--encre-2:#3A3C40;--encre-3:#71757B;--papier:#FBFBF9;--carte:#FFFFFF;--trait:#E2E2DD;--trait-fort:#C9C9C2;--surbrillance:#F2F2EE;--mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;--sans:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}
+@media (prefers-color-scheme:dark){:root{--encre:#F2F2EF;--encre-2:#B9BBBE;--encre-3:#83868B;--papier:#0C0C0D;--carte:#151618;--trait:#26272B;--trait-fort:#3A3C40;--surbrillance:#1C1D20;}}
+html,body,[data-testid="stAppViewContainer"],[data-testid="stSidebar"]{background:var(--papier);color:var(--encre);font-family:var(--sans);font-feature-settings:"ss01","cv01","tnum";}
+[data-testid="stHeader"]{background:transparent;border-bottom:1px solid var(--trait);}
+[data-testid="stAppViewContainer"] .block-container{padding-top:1.4rem;max-width:1480px;}
+h1,h2,h3{font-family:var(--sans);letter-spacing:-.022em;color:var(--encre);font-weight:600;}
+h1{font-size:1.72rem;font-weight:700;}
 h2{font-size:1.24rem;}
 h3{font-size:1.04rem;}
-/* Micro-titres de section : capitales espacees, codes d'une fiche de scouting */
-h4,h5{font-family:var(--mono); font-size:.72rem!important; letter-spacing:.13em;
-  text-transform:uppercase; color:var(--encre-3); font-weight:600; margin:1.5rem 0 .5rem;}
+h4,h5{font-family:var(--mono);font-size:.72rem!important;letter-spacing:.13em;text-transform:uppercase;color:var(--encre-3);font-weight:600;margin:1.5rem 0 .5rem;}
 p,li,label,span,div{color:var(--encre);}
-small,.stCaption,[data-testid="stCaptionContainer"],[data-testid="stCaptionContainer"] p{
-  color:var(--encre-3)!important; font-size:.795rem; line-height:1.5;}
-a{color:var(--encre); text-decoration:underline; text-decoration-thickness:1px;
-  text-underline-offset:2px; text-decoration-color:var(--trait-fort);}
+small,[data-testid="stCaptionContainer"],[data-testid="stCaptionContainer"] p{color:var(--encre-3)!important;font-size:.795rem;line-height:1.5;}
+a{color:var(--encre);text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:2px;text-decoration-color:var(--trait-fort);}
 a:hover{text-decoration-color:var(--encre);}
-code,kbd{font-family:var(--mono); font-size:.82em; background:var(--surbrillance);
-  padding:.08em .34em; border-radius:3px; border:1px solid var(--trait);}
-
-/* ---------- rayures du Sporting : le seul motif decoratif ---------- */
-.rcsc-rayures{height:5px; margin:0 0 1.15rem;
-  background:repeating-linear-gradient(90deg,var(--encre) 0 11px,transparent 11px 22px);
-  opacity:.9;}
-.rcsc-rayures.fine{height:3px;
-  background:repeating-linear-gradient(90deg,var(--encre) 0 7px,transparent 7px 14px);
-  opacity:.5; margin:.35rem 0 1rem;}
-.rcsc-marque{display:flex; align-items:center; gap:.62rem; margin:.1rem 0 .1rem;}
-.rcsc-marque .blason{width:34px; height:34px; flex:none;}
-.rcsc-marque .nom{font-family:var(--mono); font-weight:600; font-size:.88rem;
-  letter-spacing:.1em; text-transform:uppercase; line-height:1.15;}
-.rcsc-marque .sous{font-family:var(--mono); font-size:.66rem; letter-spacing:.11em;
-  text-transform:uppercase; color:var(--encre-3);}
-
-/* ---------- barre laterale ---------- */
+code,kbd{font-family:var(--mono);font-size:.82em;background:var(--surbrillance);padding:.08em .34em;border-radius:3px;border:1px solid var(--trait);}
+.rcsc-rayures{height:5px;margin:0 0 1.15rem;background:repeating-linear-gradient(90deg,var(--encre) 0 11px,transparent 11px 22px);opacity:.9;}
+.rcsc-rayures.fine{height:3px;background:repeating-linear-gradient(90deg,var(--encre) 0 7px,transparent 7px 14px);opacity:.5;margin:.35rem 0 1rem;}
+.rcsc-marque{display:flex;align-items:center;gap:.7rem;margin:.1rem 0;}
+.rcsc-marque svg{flex:none;display:block;}
+.rcsc-marque .nom{font-family:var(--mono);font-weight:600;font-size:.86rem;letter-spacing:.1em;text-transform:uppercase;line-height:1.25;}
+.rcsc-marque .sous{font-family:var(--mono);font-size:.64rem;letter-spacing:.11em;text-transform:uppercase;color:var(--encre-3);margin-top:.18rem;}
+.rcsc-marque.grand{gap:1rem;}
+.rcsc-marque.grand .nom{font-size:1.16rem;letter-spacing:.13em;}
+.rcsc-marque.grand .sous{font-size:.72rem;}
 [data-testid="stSidebar"]{border-right:1px solid var(--trait);}
 [data-testid="stSidebar"] .block-container{padding-top:1.1rem;}
-[data-testid="stSidebar"] h1{font-size:1rem!important; letter-spacing:.09em;
-  font-family:var(--mono); text-transform:uppercase; font-weight:600;}
-/* Les intitules de filtres : petites capitales, lisibles sans crier */
-[data-testid="stSidebar"] label p{font-size:.775rem!important; font-weight:500;
-  color:var(--encre-2)!important; letter-spacing:.005em;}
-[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] strong{
-  font-family:var(--mono); font-size:.7rem; letter-spacing:.13em; text-transform:uppercase;
-  color:var(--encre-3); font-weight:600;}
+[data-testid="stSidebar"] label p{font-size:.775rem!important;font-weight:500;color:var(--encre-2)!important;}
+[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] strong{font-family:var(--mono);font-size:.7rem;letter-spacing:.13em;text-transform:uppercase;color:var(--encre-3);font-weight:600;}
 [data-testid="stSidebar"] hr{border-color:var(--trait);}
-
-/* ---------- champs ---------- */
-[data-baseweb="input"],[data-baseweb="select"]>div,[data-baseweb="textarea"]{
-  border-radius:4px!important; border-color:var(--trait-fort)!important;
-  background:var(--carte)!important;}
-[data-baseweb="input"]:focus-within,[data-baseweb="select"]>div:focus-within{
-  border-color:var(--encre)!important; box-shadow:none!important;}
-[data-baseweb="tag"]{background:var(--encre)!important; color:var(--papier)!important;
-  border-radius:3px!important; font-family:var(--mono); font-size:.72rem!important;}
+[data-baseweb="input"],[data-baseweb="select"]>div,[data-baseweb="textarea"]{border-radius:4px!important;border-color:var(--trait-fort)!important;background:var(--carte)!important;}
+[data-baseweb="input"]:focus-within,[data-baseweb="select"]>div:focus-within{border-color:var(--encre)!important;box-shadow:none!important;}
+[data-baseweb="tag"]{background:var(--encre)!important;color:var(--papier)!important;border-radius:3px!important;font-family:var(--mono);font-size:.72rem!important;}
 [data-baseweb="tag"] svg{fill:var(--papier)!important;}
-
-/* ---------- boutons : plats, sans ombre, hairline ---------- */
-.stButton>button,.stDownloadButton>button{
-  border-radius:4px; border:1px solid var(--trait-fort); background:var(--carte);
-  color:var(--encre); font-weight:500; font-size:.82rem; padding:.36rem .8rem;
-  box-shadow:none; transition:border-color .12s,background .12s;}
-.stButton>button:hover,.stDownloadButton>button:hover{
-  border-color:var(--encre); background:var(--surbrillance); color:var(--encre);}
-.stButton>button[kind="primary"]{background:var(--encre); color:var(--papier);
-  border-color:var(--encre);}
-.stButton>button[kind="primary"]:hover{background:var(--encre-2); border-color:var(--encre-2);
-  color:var(--papier);}
-/* Resultats de recherche : lignes, pas boutons -- on lit une liste */
-[data-testid="stSidebar"] .stButton>button{text-align:left; justify-content:flex-start;
-  border:none; border-bottom:1px solid var(--trait); border-radius:0;
-  padding:.4rem .15rem; font-size:.8rem; background:transparent;}
-[data-testid="stSidebar"] .stButton>button:hover{background:var(--surbrillance);
-  border-bottom-color:var(--encre);}
-
-/* ---------- onglets : soulignement, pas de pilules ---------- */
-.stTabs [data-baseweb="tab-list"]{gap:1.45rem; border-bottom:1px solid var(--trait);}
-.stTabs [data-baseweb="tab"]{background:transparent!important; padding:.5rem 0 .55rem;
-  font-family:var(--mono); font-size:.76rem; letter-spacing:.075em; text-transform:uppercase;
-  font-weight:500; color:var(--encre-3);}
-.stTabs [aria-selected="true"]{color:var(--encre)!important; font-weight:600;}
-.stTabs [data-baseweb="tab-highlight"]{background:var(--encre); height:2px;}
+.stButton>button,.stDownloadButton>button{border-radius:4px;border:1px solid var(--trait-fort);background:var(--carte);color:var(--encre);font-weight:500;font-size:.82rem;padding:.36rem .8rem;box-shadow:none;transition:border-color .12s,background .12s;}
+.stButton>button:hover,.stDownloadButton>button:hover{border-color:var(--encre);background:var(--surbrillance);color:var(--encre);}
+.stButton>button[kind="primary"]{background:var(--encre);color:var(--papier);border-color:var(--encre);}
+.stButton>button[kind="primary"]:hover{background:var(--encre-2);border-color:var(--encre-2);color:var(--papier);}
+[data-testid="stSidebar"] .stButton>button{text-align:left;justify-content:flex-start;border:none;border-bottom:1px solid var(--trait);border-radius:0;padding:.4rem .15rem;font-size:.8rem;background:transparent;}
+[data-testid="stSidebar"] .stButton>button:hover{background:var(--surbrillance);border-bottom-color:var(--encre);}
+.stTabs [data-baseweb="tab-list"]{gap:1.45rem;border-bottom:1px solid var(--trait);}
+.stTabs [data-baseweb="tab"]{background:transparent!important;padding:.5rem 0 .55rem;font-family:var(--mono);font-size:.76rem;letter-spacing:.075em;text-transform:uppercase;font-weight:500;color:var(--encre-3);}
+.stTabs [aria-selected="true"]{color:var(--encre)!important;font-weight:600;}
+.stTabs [data-baseweb="tab-highlight"]{background:var(--encre);height:2px;}
 .stTabs [data-baseweb="tab-border"]{display:none;}
-
-/* ---------- indicateurs chiffres ---------- */
-[data-testid="stMetric"]{background:var(--carte); border:1px solid var(--trait);
-  border-radius:5px; padding:.68rem .85rem;}
-[data-testid="stMetricLabel"] p{font-family:var(--mono)!important; font-size:.66rem!important;
-  letter-spacing:.11em; text-transform:uppercase; color:var(--encre-3)!important; font-weight:600;}
-[data-testid="stMetricValue"]{font-family:var(--mono); font-weight:600; font-size:1.42rem;
-  letter-spacing:-.018em; color:var(--encre);}
-[data-testid="stMetricDelta"]{font-family:var(--mono); font-size:.76rem;}
-
-/* ---------- tableaux : chiffres alignes, lignes serrees ---------- */
-[data-testid="stDataFrame"]{border:1px solid var(--trait); border-radius:5px;}
-[data-testid="stDataFrame"] [role="columnheader"]{background:var(--surbrillance)!important;
-  font-family:var(--mono)!important; font-size:.68rem!important; letter-spacing:.075em;
-  text-transform:uppercase; color:var(--encre-3)!important; font-weight:600;}
-[data-testid="stDataFrame"] [role="gridcell"]{font-size:.815rem; font-variant-numeric:tabular-nums;}
-
-/* ---------- conteneurs, encadres, messages ---------- */
-[data-testid="stExpander"]{border:1px solid var(--trait)!important; border-radius:5px;
-  background:var(--carte);}
-[data-testid="stExpander"] summary{font-size:.84rem; font-weight:500;}
-[data-testid="stVerticalBlockBorderWrapper"]>div>[data-testid="stVerticalBlock"]{gap:.6rem;}
-div[data-testid="stAlert"]{border-radius:5px; border:1px solid var(--trait);
-  background:var(--carte); color:var(--encre); font-size:.83rem;}
-hr{border-color:var(--trait); margin:1.3rem 0;}
-[data-testid="stSliderTickBarMin"],[data-testid="stSliderTickBarMax"]{
-  font-family:var(--mono); font-size:.66rem; color:var(--encre-3);}
-[data-baseweb="slider"] [role="slider"]{background:var(--encre)!important;
-  border-color:var(--encre)!important;}
-
-/* ---------- barres de progression dans les tableaux ---------- */
-[data-testid="stDataFrame"] [role="gridcell"] div[style*="background"]{border-radius:2px;}
-</style>
-""", unsafe_allow_html=True)
+[data-testid="stMetric"]{background:var(--carte);border:1px solid var(--trait);border-radius:5px;padding:.68rem .85rem;}
+[data-testid="stMetricLabel"] p{font-family:var(--mono)!important;font-size:.66rem!important;letter-spacing:.11em;text-transform:uppercase;color:var(--encre-3)!important;font-weight:600;}
+[data-testid="stMetricValue"]{font-family:var(--mono);font-weight:600;font-size:1.42rem;letter-spacing:-.018em;color:var(--encre);}
+[data-testid="stMetricDelta"]{font-family:var(--mono);font-size:.76rem;}
+[data-testid="stDataFrame"]{border:1px solid var(--trait);border-radius:5px;}
+[data-testid="stDataFrame"] [role="columnheader"]{background:var(--surbrillance)!important;font-family:var(--mono)!important;font-size:.68rem!important;letter-spacing:.075em;text-transform:uppercase;color:var(--encre-3)!important;font-weight:600;}
+[data-testid="stDataFrame"] [role="gridcell"]{font-size:.815rem;font-variant-numeric:tabular-nums;}
+[data-testid="stExpander"]{border:1px solid var(--trait)!important;border-radius:5px;background:var(--carte);}
+[data-testid="stExpander"] summary{font-size:.84rem;font-weight:500;}
+div[data-testid="stAlert"]{border-radius:5px;border:1px solid var(--trait);background:var(--carte);color:var(--encre);font-size:.83rem;}
+hr{border-color:var(--trait);margin:1.3rem 0;}
+[data-testid="stSliderTickBarMin"],[data-testid="stSliderTickBarMax"]{font-family:var(--mono);font-size:.66rem;color:var(--encre-3);}
+[data-baseweb="slider"] [role="slider"]{background:var(--encre)!important;border-color:var(--encre)!important;}
+</style>"""
+st.markdown(_CSS_RCSC, unsafe_allow_html=True)
 
 
 def rayures(fine: bool = False) -> None:
@@ -238,29 +160,48 @@ px.defaults.color_discrete_sequence = SEQUENCE_RCSC
 # Blason : monogramme raye dessine en SVG, pas le vrai ecusson (marque deposee,
 # et un fichier binaire ne doit pas finir dans un depot public). Si un
 # logo_rcsc.png/svg est pose a cote d'app.py ou a la racine, il prend le relais.
-_BLASON_SVG = """
-<svg class="blason" viewBox="0 0 40 44" fill="none" xmlns="http://www.w3.org/2000/svg"
-     role="img" aria-label="Sporting de Charleroi">
-  <path d="M2 2h36v26c0 8-8 12-18 14C10 40 2 36 2 28V2z"
-        fill="none" stroke="currentColor" stroke-width="2.4"/>
-  <mask id="ecu"><path d="M2 2h36v26c0 8-8 12-18 14C10 40 2 36 2 28V2z" fill="#fff"/></mask>
-  <g mask="url(#ecu)">
-    <rect x="6"  y="0" width="5" height="44" fill="currentColor"/>
-    <rect x="17" y="0" width="5" height="44" fill="currentColor"/>
-    <rect x="28" y="0" width="5" height="44" fill="currentColor"/>
-  </g>
-</svg>"""
+def _blason(taille: int = 34) -> str:
+    """Ecusson raye du Sporting, dessine en SVG.
+
+    Ce n'est PAS l'ecusson officiel : c'est une marque deposee, et le dossier
+    deploiement/ part dans un depot public. Pose un logo_rcsc.png a cote
+    d'app.py ou a la racine et marque() l'utilisera a la place.
+
+    La taille est inscrite dans les attributs du SVG, pas seulement en CSS :
+    sans feuille de style appliquee l'ecusson prenait toute la largeur.
+    """
+    h = round(taille * 44 / 40)
+    return (
+        f'<svg width="{taille}" height="{h}" viewBox="0 0 40 44" fill="none" '
+        'xmlns="http://www.w3.org/2000/svg" role="img" '
+        'aria-label="Sporting de Charleroi" '
+        f'style="width:{taille}px;height:{h}px;flex:none;display:block">'
+        '<defs><clipPath id="ecu-rcsc">'
+        '<path d="M3 3h34v24.5c0 7.6-7.4 11.4-17 13.5C10.4 38.9 3 35.1 3 27.5V3z"/>'
+        '</clipPath></defs>'
+        '<g clip-path="url(#ecu-rcsc)">'
+        '<rect x="0" y="0" width="40" height="44" fill="currentColor"/>'
+        '<rect x="9.5" y="0" width="4.2" height="44" fill="var(--papier,#FBFBF9)"/>'
+        '<rect x="17.9" y="0" width="4.2" height="44" fill="var(--papier,#FBFBF9)"/>'
+        '<rect x="26.3" y="0" width="4.2" height="44" fill="var(--papier,#FBFBF9)"/>'
+        '</g>'
+        '<path d="M3 3h34v24.5c0 7.6-7.4 11.4-17 13.5C10.4 38.9 3 35.1 3 27.5V3z" '
+        'fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>'
+        '</svg>'
+    )
 
 
-def marque(sous_titre: str = "Scouting · Impect") -> None:
-    """En-tete de marque : blason + nom du club."""
+def marque(sous_titre: str = "Scouting · Impect", taille: int = 34,
+           grand: bool = False) -> None:
+    """En-tete de marque : ecusson + nom du club."""
+    classe = "rcsc-marque grand" if grand else "rcsc-marque"
     if LOGO_RCSC is not None:
         c1, c2 = st.columns([1, 4], vertical_alignment="center")
-        c1.image(str(LOGO_RCSC), width=38)
-        c2.markdown(f"<div class='rcsc-marque'><div><div class='nom'>Sporting de Charleroi</div>"
+        c1.image(str(LOGO_RCSC), width=taille)
+        c2.markdown(f"<div class='{classe}'><div><div class='nom'>Sporting de Charleroi</div>"
                     f"<div class='sous'>{sous_titre}</div></div></div>", unsafe_allow_html=True)
     else:
-        st.markdown(f"<div class='rcsc-marque'>{_BLASON_SVG}"
+        st.markdown(f"<div class='{classe}'>{_blason(taille)}"
                     f"<div><div class='nom'>Sporting<br>de Charleroi</div>"
                     f"<div class='sous'>{sous_titre}</div></div></div>", unsafe_allow_html=True)
 
@@ -307,7 +248,7 @@ def authentifier() -> None:
     # Ecran d'accueil centre : blason, rayures, puis le formulaire. Rien d'autre.
     _, _mid, _ = st.columns([1, 1.25, 1])
     with _mid:
-        marque("Plateforme de scouting")
+        marque("Plateforme de scouting", taille=58, grand=True)
         rayures()
     if not _comptes():
         en_ligne = "/mount/src" in str(_ICI)
