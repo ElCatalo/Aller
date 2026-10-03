@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+import re
 import tomllib
 from pathlib import Path
 
@@ -55,9 +56,14 @@ st.set_page_config(page_title="Scouting Impect — Charleroi", page_icon="🦓",
 # (le noir lui-meme), zero couleur decorative. Les rayures noir/blanc du
 # Sporting -- les Zebres -- servent de motif de separation et d'en-tete.
 # Le vert/rouge reste reserve aux ecarts chiffres (progression, verdicts).
-LOGO_RCSC = next((p for p in (_ICI / "logo_rcsc.png", _ICI.parent / "logo_rcsc.png",
-                              _ICI / "logo_rcsc.svg", _ICI.parent / "logo_rcsc.svg")
-                  if p.exists()), None)
+# Ecusson officiel depose par Alex a la racine du projet (03/10/2026). On
+# accepte plusieurs noms/formats : le fichier reel s'appelle
+# "Sporting_de_Charleroi_(logo).svg". A defaut, _blason() dessine un
+# monogramme raye de repli (cf. plus bas).
+_NOMS_LOGO = ("Sporting_de_Charleroi_(logo).svg", "Sporting_de_Charleroi_(logo).png",
+              "logo_rcsc.svg", "logo_rcsc.png")
+LOGO_RCSC = next((d / n for d in (_ICI, _ICI.parent) for n in _NOMS_LOGO
+                  if (d / n).exists()), None)
 
 # Injecte en UNE SEULE chaine sans ligne vide : markdown ferme la balise
 # de style des qu il rencontre une ligne vide, et tout le CSS suivant
@@ -167,6 +173,38 @@ pio.templates.default = "plotly_white+rcsc"
 px.defaults.color_discrete_sequence = SEQUENCE_RCSC
 
 
+@st.cache_data(show_spinner=False)
+def _logo_inline(chemin: str, hauteur: int) -> str:
+    """SVG de l'ecusson, injecte dans la page a la hauteur voulue.
+
+    On retire la taille d'origine (305x575 pt) pour ne garder que le viewBox :
+    c'est lui qui permet la mise a l'echelle. La largeur suit le ratio.
+    """
+    brut = Path(chemin).read_text(encoding="utf-8", errors="replace")
+    brut = re.sub(r"<\?xml[^>]*\?>", "", brut)
+    brut = re.sub(r"<!DOCTYPE[^>]*>", "", brut)
+    brut = re.sub(r"<!--.*?-->", "", brut, flags=re.S)
+    ouv = re.search(r"<svg[^>]*>", brut)
+    if not ouv:
+        return ""
+    balise = ouv.group(0)
+    vb = re.search(r'viewBox="([^"]+)"', balise)
+    ratio = 0.55
+    if vb:
+        try:
+            _, _, w, h = (float(x) for x in vb.group(1).replace(",", " ").split())
+            ratio = w / h if h else ratio
+        except ValueError:
+            pass
+    nouvelle = re.sub(r'\s(width|height)="[^"]*"', "", balise)
+    largeur = round(hauteur * ratio)
+    nouvelle = nouvelle.replace(
+        "<svg", f'<svg height="{hauteur}" width="{largeur}" '
+                f'style="height:{hauteur}px;width:{largeur}px;flex:none;display:block" '
+                'role="img" aria-label="Sporting de Charleroi"', 1)
+    return brut.replace(balise, nouvelle, 1).strip()
+
+
 # Blason : monogramme raye dessine en SVG, pas le vrai ecusson (marque deposee,
 # et un fichier binaire ne doit pas finir dans un depot public). Si un
 # logo_rcsc.png/svg est pose a cote d'app.py ou a la racine, il prend le relais.
@@ -201,19 +239,21 @@ def _blason(taille: int = 34) -> str:
     )
 
 
-def marque(sous_titre: str = "Scouting · Impect", taille: int = 34,
+def marque(sous_titre: str = "Scouting · Impect", hauteur: int = 38,
            grand: bool = False) -> None:
-    """En-tete de marque : ecusson + nom du club."""
+    """En-tete de marque : ecusson du club + nom.
+
+    L'ecusson officiel est portrait (plus haut que large) : on raisonne en
+    HAUTEUR, la largeur suit le ratio du fichier.
+    """
     classe = "rcsc-marque grand" if grand else "rcsc-marque"
-    if LOGO_RCSC is not None:
-        c1, c2 = st.columns([1, 4], vertical_alignment="center")
-        c1.image(str(LOGO_RCSC), width=taille)
-        c2.markdown(f"<div class='{classe}'><div><div class='nom'>Sporting de Charleroi</div>"
-                    f"<div class='sous'>{sous_titre}</div></div></div>", unsafe_allow_html=True)
-    else:
-        st.markdown(f"<div class='{classe}'>{_blason(taille)}"
-                    f"<div><div class='nom'>Sporting<br>de Charleroi</div>"
-                    f"<div class='sous'>{sous_titre}</div></div></div>", unsafe_allow_html=True)
+    ecusson = _logo_inline(str(LOGO_RCSC), hauteur) if LOGO_RCSC else ""
+    if not ecusson:
+        ecusson = _blason(round(hauteur * 0.78))      # repli dessine
+    st.markdown(f"<div class='{classe}'>{ecusson}"
+                f"<div><div class='nom'>Sporting<br>de Charleroi</div>"
+                f"<div class='sous'>{sous_titre}</div></div></div>",
+                unsafe_allow_html=True)
 
 
 # ----------------------------------------------------------------- acces
@@ -259,7 +299,7 @@ def authentifier() -> None:
     _, _mid, _ = st.columns([1, 1.25, 1])
     with _mid:
         st.markdown("<div class='rcsc-accueil'></div>", unsafe_allow_html=True)
-        marque("Plateforme de scouting", taille=58, grand=True)
+        marque("Plateforme de scouting", hauteur=86, grand=True)
         rayures()
     if not _comptes():
         en_ligne = "/mount/src" in str(_ICI)
@@ -350,7 +390,7 @@ MONITORING = bool(onglet_mon.open)
 
 # ----------------------------------------------------------------- filtres
 with st.sidebar:
-    marque("Scouting · Impect")
+    marque("Scouting · Impect", hauteur=46)
     rayures(fine=True)
     st.caption(f"Données du {genere_le} · {st.session_state['connecte']}")
     if st.button("Se déconnecter", width="stretch"):
