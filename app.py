@@ -135,6 +135,12 @@ div[data-testid="stAlert"]{border-radius:5px;border:1px solid var(--trait);backg
 hr{border-color:var(--trait);margin:1.3rem 0;}
 [data-testid="stSliderTickBarMin"],[data-testid="stSliderTickBarMax"]{font-family:var(--mono);font-size:.66rem;color:var(--encre-3);}
 [data-baseweb="slider"] [role="slider"]{background:var(--encre)!important;border-color:var(--encre)!important;}
+/* equipe type : cases de poste, lecture rapide */
+.rcsc-case{font-family:var(--mono);font-size:.62rem;letter-spacing:.11em;text-transform:uppercase;color:var(--encre-3);font-weight:600;margin-bottom:.3rem;}
+.rcsc-meta{font-size:.73rem;line-height:1.45;color:var(--encre-2);margin:.15rem 0 .45rem;}
+.rcsc-meta b{color:var(--encre);}
+.rcsc-vide{font-family:var(--mono);color:var(--trait-fort);font-size:1.1rem;text-align:center;padding:.5rem 0 .7rem;line-height:1.3;}
+.rcsc-vide span{font-size:.66rem;letter-spacing:.06em;color:var(--encre-3);}
 /* ecran de connexion : respiration verticale */
 .rcsc-accueil{padding-top:4.5rem;}
 </style>"""
@@ -384,9 +390,14 @@ MON = params_monitoring()
 # ----------------------------------------------------------------- onglets
 # Onglets a execution paresseuse : seul l'onglet ouvert calcule sa page, et la
 # barre laterale s'adapte (periode et minutes sur la periode en Monitoring).
-onglet_saison, onglet_mon = st.tabs(["Scouting saison", "Monitoring"],
-                                    key="onglet", on_change="rerun")
+onglet_saison, onglet_mon, onglet_rcsc = st.tabs(
+    ["Scouting saison", "Monitoring", "Sporting de Charleroi"],
+    key="onglet", on_change="rerun")
 MONITORING = bool(onglet_mon.open)
+# Onglet maison : effectif du RSC Charleroi et equipe type. Il n'utilise aucun
+# des filtres de la barre laterale (poste, championnat, minutes...), on evite
+# donc la grosse requete de classement quand il est ouvert.
+VUE_RCSC = bool(onglet_rcsc.open)
 
 # ----------------------------------------------------------------- filtres
 with st.sidebar:
@@ -862,7 +873,7 @@ def page_courante(filtre: str) -> int:
     return st.session_state.get("page", 0)
 
 
-if not MONITORING:
+if not MONITORING and not VUE_RCSC:
     # Profil RCSC : meme joueur-saison, meme pool. Plus de verdict : filtre sur
     # le score de correspondance lui-meme (cf. profils_rcsc.py).
     _SOUS_PROFIL = """FROM fait_profil p WHERE p.playerId = v_joueurs.playerId AND p.squadId = v_joueurs.squadId
@@ -1987,7 +1998,8 @@ fiche_param = st.query_params.get("fiche")
 
 # Chaque vue s'affiche dans l'onglet ouvert. Une fiche ou un effectif ouvert
 # depuis le Monitoring y reste : le bouton retour ramene au classement.
-with (onglet_mon if MONITORING else onglet_saison):
+with (onglet_mon if MONITORING else
+      onglet_rcsc if VUE_RCSC else onglet_saison):
     # ----------------------------------------------------------------- vue fiche
     # Ouverte depuis "Ses autres saisons" : prime sur la vue club et la recherche,
     # le bouton retour ramene la ou l'on etait (effectif du club ou recherche).
@@ -2049,6 +2061,12 @@ with (onglet_mon if MONITORING else onglet_saison):
 
     elif MONITORING:
         vue_monitoring()
+
+    elif VUE_RCSC:
+        # L'onglet maison se dessine dans son propre bloc plus bas : ici on ne
+        # fait rien, surtout pas le classement (ses donnees ne sont meme pas
+        # calculees quand cet onglet est ouvert).
+        pass
 
     else:
         # ------------------------------------------------------------- vue joueurs
@@ -2138,6 +2156,222 @@ with (onglet_mon if MONITORING else onglet_saison):
         st.divider()
         lignes = event.selection["rows"] if event and "rows" in event.selection else []
         carte_joueur(res.iloc[lignes[0] if lignes else 0])
+
+# ============================================================================
+# ONGLET SPORTING DE CHARLEROI -- effectif maison et equipe type 4-2-3-1
+# ============================================================================
+# Repond a trois questions : qui du RSC Charleroi est evalue par la plateforme,
+# qui joue le plus a chaque poste, et quel archetype s'applique a ce poste.
+# Le squadId est fige (374) : chercher "charleroi" par le nom ramenerait aussi
+# l'Olympic Charleroi, qui est un autre club (Challenger Pro League).
+RCSC_SQUAD_ID = 374
+
+# Un poste Impect -> une case du 4-2-3-1. Les deux axes centraux (charniere,
+# double pivot) prennent deux joueurs, d'ou la colonne "places".
+FORMATION_4231 = [
+    # (ligne, [(case, poste Impect, places)])
+    ("Attaque",   [("Buteur", "CENTER_FORWARD", 1)]),
+    ("Soutien",   [("Ailier gauche", "LEFT_WINGER", 1),
+                   ("Meneur", "ATTACKING_MIDFIELD", 1),
+                   ("Ailier droit", "RIGHT_WINGER", 1)]),
+    ("Double pivot", [("Milieu", "DEFENSE_CENTRAL_MIDFIELD", 2)]),
+    ("Defense",   [("Latéral gauche", "LEFT_WINGBACK_DEFENDER", 1),
+                   ("Charnière", "CENTRAL_DEFENDER", 2),
+                   ("Latéral droit", "RIGHT_WINGBACK_DEFENDER", 1)]),
+    ("But",       [("Gardien", "GOALKEEPER", 1)]),
+]
+
+
+@st.cache_data(show_spinner=False)
+def effectif_rcsc(saison_choisie: str) -> pd.DataFrame:
+    """Joueurs du RSC Charleroi evalues par la plateforme sur cette saison.
+
+    Un joueur de DEFENSE_CENTRAL_MIDFIELD sort DEUX fois (archetypes SIX et
+    EIGHT, memes minutes) : on regroupe par joueur+poste et on garde le
+    meilleur archetype comme principal, en conservant la liste complete pour
+    l'affichage -- c'est precisement ce qu'Alex veut voir poste par poste.
+    """
+    d = requete("""
+        SELECT playerId, squadId, iterationId, position, archetype, nom,
+               minutes_jouees AS minutes, round(score,1) AS score,
+               round(score_performance,1) AS performance,
+               round(qualite_actuelle,1) AS qualite, round(age_years,1) AS age,
+               pied_fort, taille_cm, profil_principal, pilier_fort, pilier_faible,
+               round(progression_credible,1) AS progression, rang_archetype AS rang,
+               side, saison
+        FROM v_joueurs WHERE squadId = ? AND saison = ?
+        ORDER BY minutes_jouees DESC, score DESC""",
+        (RCSC_SQUAD_ID, saison_choisie))
+    if d.empty:
+        return d
+    # Archetype principal = celui au meilleur score pour ce joueur a ce poste.
+    d = d.sort_values(["playerId", "position", "score"], ascending=[True, True, False])
+    grp = d.groupby(["playerId", "position"], as_index=False)
+    princ = grp.head(1).copy()
+    tous = (d.groupby(["playerId", "position"])["archetype"]
+              .apply(lambda x: " / ".join(dict.fromkeys(x))).rename("archetypes").reset_index())
+    princ = princ.merge(tous, on=["playerId", "position"], how="left")
+    # Colonnes objet contenant None : st.dataframe ecrit litteralement "None".
+    # On force le numerique (vide = vide) et on remplace les textes manquants.
+    for c in ("score", "performance", "qualite", "progression", "age",
+              "taille_cm", "rang", "minutes"):
+        princ[c] = pd.to_numeric(princ[c], errors="coerce")
+    for c in ("profil_principal", "pilier_fort", "pilier_faible", "pied_fort"):
+        princ[c] = princ[c].astype("object").where(princ[c].notna(), "—")
+    return princ.sort_values("minutes", ascending=False).reset_index(drop=True)
+
+
+def _carte_poste(col, titre: str, joueur, saison_choisie: str) -> None:
+    """Une case de l'equipe type. Sans joueur, la case reste visible et dit
+    pourquoi -- une equipe type trouee est une information, pas un bug."""
+    with col.container(border=True):
+        st.markdown(f"<div class='rcsc-case'>{titre}</div>", unsafe_allow_html=True)
+        if joueur is None:
+            st.markdown("<div class='rcsc-vide'>—<br><span>aucun joueur "
+                        "évalué</span></div>", unsafe_allow_html=True)
+            return
+        st.markdown(f"**{joueur.nom}**")
+        st.markdown(
+            f"<div class='rcsc-meta'><b>{joueur.archetypes}</b>"
+            f"{' · ' + str(joueur.profil_principal) if str(joueur.profil_principal) not in ('nan', 'None', '—') else ''}"
+            f"<br>{joueur.minutes:,.0f} min · {n_(joueur.age, '{:.0f}')} ans"
+            f"<br>{COURT} <b>{n_(joueur.score)}</b> · perf {n_(joueur.performance)}</div>"
+            .replace(",", " "), unsafe_allow_html=True)
+        if st.button("Fiche", key=f"rcsc_{saison_choisie}_{joueur.playerId}_{joueur.position}",
+                     width="stretch"):
+            st.session_state["_archetype_a_appliquer"] = joueur.archetype
+            st.query_params["fiche"] = "~".join(str(v) for v in (
+                int(joueur.playerId), int(joueur.squadId), int(joueur.iterationId),
+                joueur.position, joueur.archetype))
+            st.rerun()
+
+
+with onglet_rcsc:
+    if fiche_param:
+        pass                      # la fiche ouverte depuis cet onglet s'affiche plus haut
+    else:
+        st.markdown("#### Effectif maison")
+        st.title("Sporting de Charleroi")
+        rayures(fine=True)
+
+        _saisons_rcsc = requete(
+            "SELECT DISTINCT saison FROM v_joueurs WHERE squadId = ? ORDER BY saison DESC",
+            (RCSC_SQUAD_ID,))["saison"].tolist()
+        if not _saisons_rcsc:
+            st.warning("Aucun joueur du RSC Charleroi dans cette base.")
+        else:
+            saison_rcsc = st.radio("Saison", _saisons_rcsc, horizontal=True,
+                                   key="saison_rcsc")
+            eff = effectif_rcsc(saison_rcsc)
+
+            if eff.empty:
+                st.warning(f"Aucun joueur évalué sur {saison_rcsc}.")
+            else:
+                k1, k2, k3, k4 = st.columns(4)
+                k1.metric("Joueurs évalués", eff["playerId"].nunique())
+                k2.metric(f"{COURT} médian", n_(eff["score"].median()))
+                k3.metric("Âge médian", n_(eff["age"].median()))
+                k4.metric("Minutes cumulées", f"{eff['minutes'].sum():,.0f}".replace(",", " "))
+                st.caption(
+                    "Seuls les joueurs ayant assez joué à un poste sont évalués par la pipeline "
+                    "(400 minutes au minimum) : un joueur peu utilisé n'apparaît pas, "
+                    "et un joueur ayant tenu deux postes apparaît une fois par poste.")
+
+                # ---------------- equipe type ----------------
+                st.markdown("#### Équipe type 4-2-3-1")
+                st.caption("À chaque poste, le joueur qui a le plus joué **à ce poste** sur la "
+                           "saison. 👉 Le bouton ouvre sa fiche complète.")
+                pris: set = set()
+                for _ligne, cases in FORMATION_4231:
+                    largeurs = []
+                    for _t, _p, places in cases:
+                        largeurs += [1] * places
+                    # centrage : marges laterales sur les lignes courtes
+                    marge = max(0, (4 - sum(1 for _ in largeurs)) / 2)
+                    cols = st.columns(([marge] if marge else []) + largeurs
+                                      + ([marge] if marge else []))
+                    i = 1 if marge else 0
+                    for titre, poste, places in cases:
+                        candidats = eff[(eff["position"] == poste)
+                                        & (~eff["playerId"].isin(pris))]
+                        for k in range(places):
+                            j = None
+                            if len(candidats) > k:
+                                j = candidats.iloc[k]
+                                pris.add(int(j.playerId))
+                            lbl = titre if places == 1 else f"{titre} {k + 1}"
+                            _carte_poste(cols[i], lbl, j, saison_rcsc)
+                            i += 1
+
+                # ---------------- archetypes par poste ----------------
+                st.markdown("#### Nos archétypes, poste par poste")
+                st.caption("Quel archétype la plateforme applique à chaque poste du club, "
+                           "et combien de joueurs y sont évalués.")
+                lignes_arch = []
+                for _ligne, cases in FORMATION_4231:
+                    for titre, poste, _pl in cases:
+                        sub = eff[eff["position"] == poste]
+                        lignes_arch.append({
+                            "Case": titre,
+                            "Poste Impect": poste,
+                            "Archétype(s)": " / ".join(dict.fromkeys(sub["archetypes"]))
+                                            if not sub.empty else "—",
+                            "Joueurs": len(sub),
+                            "Minutes": int(sub["minutes"].sum()) if not sub.empty else 0,
+                            # texte : une colonne numerique vide s'affiche "None"
+                            f"Meilleur {COURT.lower()}":
+                                f"{sub['score'].max():.1f}" if not sub.empty else "—",
+                        })
+                st.dataframe(pd.DataFrame(lignes_arch), hide_index=True, width="stretch")
+
+                # ---------------- effectif complet ----------------
+                st.markdown("#### Tous les joueurs évalués")
+                st.caption("Un joueur ayant tenu deux postes apparaît une ligne par poste. "
+                           "👉 Coche une ligne pour ouvrir sa fiche.")
+                # Une colonne entierement vide est affichee "None" par
+                # st.dataframe des qu'elle a un format : on la retire plutot.
+                # (la progression demande deux fenetres de match, elle n'existe
+                # donc pas en debut de saison)
+                _cols_rcsc = [c for c in
+                              ["nom", "position", "archetypes", "profil_principal", "minutes",
+                               "score", "performance", "qualite", "progression", "age",
+                               "pied_fort", "taille_cm", "pilier_fort", "pilier_faible", "rang"]
+                              if eff[c].notna().any()]
+                ev_rcsc = st.dataframe(
+                    eff, hide_index=True, width="stretch", key="tbl_rcsc",
+                    on_select="rerun", selection_mode="single-row",
+                    column_order=_cols_rcsc,
+                    column_config={
+                        "nom": st.column_config.TextColumn("Joueur"),
+                        "position": st.column_config.TextColumn("Poste"),
+                        "minutes": st.column_config.NumberColumn("Minutes", format="%d"),
+                        "age": st.column_config.NumberColumn("Âge", format="%.1f"),
+                        "pied_fort": st.column_config.TextColumn("Pied"),
+                        "archetypes": st.column_config.TextColumn("Archétype(s)"),
+                        "profil_principal": st.column_config.TextColumn("Profil RCSC"),
+                        "score": st.column_config.ProgressColumn(
+                            COURT, min_value=0, max_value=120, format="%.1f"),
+                        "performance": st.column_config.NumberColumn("Perf.", format="%.1f"),
+                        "qualite": st.column_config.NumberColumn("Qualité", format="%.1f"),
+                        "progression": st.column_config.NumberColumn("Progr.", format="%+.1f"),
+                        "taille_cm": st.column_config.NumberColumn("Taille", format="%d"),
+                        "pilier_fort": st.column_config.TextColumn("Point fort"),
+                        "pilier_faible": st.column_config.TextColumn("Point faible"),
+                        "rang": st.column_config.NumberColumn("Rang mondial", format="%d"),
+                    })
+                _sel_r = ev_rcsc.selection["rows"] if ev_rcsc and "rows" in ev_rcsc.selection else []
+                if _sel_r:
+                    _j = eff.iloc[_sel_r[0]]
+                    if st.button(f"Ouvrir la fiche de {_j.nom}", type="primary",
+                                 key="rcsc_ouvrir", width="stretch"):
+                        st.session_state["_archetype_a_appliquer"] = _j.archetype
+                        st.query_params["fiche"] = "~".join(str(v) for v in (
+                            int(_j.playerId), int(_j.squadId), int(_j.iterationId),
+                            _j.position, _j.archetype))
+                        st.rerun()
+                st.download_button(
+                    "Exporter l'effectif (CSV)", eff.to_csv(index=False).encode("utf-8"),
+                    f"rcsc_{saison_rcsc.replace('/', '-')}.csv", "text/csv", key="dl_rcsc")
 
 # ----------------------------------------------------------------- mes listes
 # Refonte 02/10/2026 : la liste n'est plus un tableau mort. Les lignes stockees
