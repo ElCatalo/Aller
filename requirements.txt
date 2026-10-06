@@ -1,5 +1,5 @@
 streamlit>=1.63
-duckdb>=1.1
+duckdb>=1.2
 pandas>=2.2
 plotly>=5.24
 psycopg[binary]>=3.2

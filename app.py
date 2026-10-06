@@ -373,6 +373,19 @@ def listes():
 
 comp_df, saisons, PARAMS = listes()
 genere_le = PARAMS["genere_le"]
+# Profils RCSC et jeu sous pression : calcules des MINUTES_PROFILS, a lire avec
+# precaution sous MINUTES_FIABLES (cf. profils_rcsc.py : sous 900 minutes le
+# joueur est situe dans le pool de reference sans en faire partie). Une base
+# d'avant le 06/10/2026 n'a pas ces parametres : les profils y commencent a 900
+# minutes, les deux seuils se confondent et aucune alerte ne s'affiche.
+MINUTES_PROFILS = int(PARAMS.get("profils_minutes_min", 900))
+MINUTES_FIABLES = int(PARAMS.get("minutes_fiables", 900))
+
+
+def echantillon_reduit(minutes) -> bool:
+    """Le joueur a-t-il un profil et un jeu sous pression calcules sur moins de
+    MINUTES_FIABLES minutes ? C'est ce qui declenche l'alerte de la fiche."""
+    return bool(pd.notna(minutes) and MINUTES_PROFILS <= minutes < MINUTES_FIABLES)
 
 
 @st.cache_data(ttl=600)
@@ -535,6 +548,18 @@ def pression_fiabilite() -> dict:
     try:
         f = requete("SELECT metrique, avg(fiabilite_saison) AS f FROM fiabilite_pression "
                     "GROUP BY metrique")
+        return dict(zip(f["metrique"], f["f"]))
+    except duckdb.Error:
+        return {}
+
+
+@st.cache_data(show_spinner=False)
+def pression_fiabilite_reduite() -> dict:
+    """Meme fidelite, mesuree sur les seuls joueurs entre 400 et 900 minutes
+    (colonne ajoutee le 06/10/2026 ; vide sur une base plus ancienne)."""
+    try:
+        f = requete("SELECT metrique, avg(fiabilite_sous_900) AS f FROM fiabilite_pression "
+                    "GROUP BY metrique HAVING avg(fiabilite_sous_900) IS NOT NULL")
         return dict(zip(f["metrique"], f["f"]))
     except duckdb.Error:
         return {}
@@ -868,7 +893,11 @@ if MONITORING:
     _min_mon = int(MON["minutes_min"]) if MON is not None else 30
     minutes_min = st.sidebar.slider("Minutes minimum sur la période", _min_mon, 1200, _min_mon, step=30)
 else:
-    minutes_min = st.sidebar.slider("Minutes minimum", 400, 3000, 900, step=100)
+    minutes_min = st.sidebar.slider(
+        "Minutes minimum", 400, 3000, 900, step=100,
+        help=f"Sous {MINUTES_FIABLES} minutes, le profil RCSC et le jeu sous pression d'un joueur "
+             "reposent sur un échantillon réduit : ils sont affichés, avec une alerte sur la fiche "
+             "et un ⚠ dans le classement." if MINUTES_PROFILS < MINUTES_FIABLES else None)
 pieds = st.sidebar.multiselect("Pied fort", ["droit", "gauche", "les deux"])
 score_min = st.sidebar.slider(f"{COURT} minimum", 0, 100, 0, step=5)
 
@@ -1371,7 +1400,7 @@ def _morceaux(texte) -> list[str]:
     return [] if pd.isna(texte) or not texte else [t for t in str(texte).split(" · ") if t]
 
 
-def section_profils(cle: tuple) -> None:
+def section_profils(cle: tuple, minutes=None) -> None:
     """Profils RCSC (sous-archetypes) du joueur dans ce pool : les 3 plus proches
     par correspondance, puis le detail de tous les profils du poste. Pas de
     verdict ni d'exclusion (cf. profils_rcsc.py) : le classement se fait
@@ -1388,7 +1417,7 @@ def section_profils(cle: tuple) -> None:
         return   # base construite avant les profils
     st.markdown("#### 🧩 Profils RCSC")
     if prof.empty:
-        st.caption("Profils calculés à partir de 900 minutes jouées à ce poste.")
+        st.caption(f"Profils calculés à partir de {MINUTES_PROFILS} minutes jouées à ce poste.")
         return
     prof = prof.sort_values("correspondance", ascending=False).reset_index(drop=True)
     retenus = prof.head(3)
@@ -1405,6 +1434,11 @@ def section_profils(cle: tuple) -> None:
             st.caption("  \n".join(lignes))
 
     notes = []
+    if echantillon_reduit(minutes):
+        notes.append(f"⚠️ **Moins de {MINUTES_FIABLES} minutes** : ses correspondances sont situées par "
+                     f"rapport aux joueurs à {MINUTES_FIABLES} minutes et plus, dont il ne fait pas partie. "
+                     "Elles lisent des percentiles de piliers calculés sur moins de dix matchs pleins : "
+                     "un écart de quelques points entre deux profils ne les départage pas.")
     if len(retenus) >= 2 and pd.notna(retenus.iloc[0]["erreur_type"]):
         ecart = abs(retenus.iloc[0]["correspondance"] - retenus.iloc[1]["correspondance"])
         if ecart < retenus.iloc[0]["erreur_type"]:
@@ -1461,6 +1495,11 @@ PRESSION_LIGNES = [
 ]
 
 
+# Sous cette fidelite (matchs pairs vs impairs, joueurs de 400 a 900 minutes), une
+# mesure de pression n'est pas affichee sur une fiche a echantillon reduit.
+FIDELITE_MIN_REDUIT = 0.20
+
+
 def section_pression(j) -> None:
     """Bloc « Sous pression » : descriptif, hors score.
 
@@ -1481,17 +1520,28 @@ def section_pression(j) -> None:
         return
     if pz.empty:
         st.markdown("#### 🫸 Sous pression")
-        st.caption("Pas assez de volume à ce poste : le jeu sous pression est calculé à partir de "
-                   "300 passes, et la partie progression à partir de 600 minutes (270 en saison en "
-                   "cours) et 15 passes progressives sous forte pression.")
+        st.caption("Pas de mesure à ce poste : le jeu sous pression est affiché à partir de 80 passes "
+                   "jouées à ce poste, et sa partie progression à partir de 400 minutes et de 20 passes "
+                   "sous forte pression. Certains championnats ne sont pas couverts par l'étude.")
         return
     d = pz.iloc[0]
 
     st.markdown("#### 🫸 Sous pression")
+    # Echantillon reduit : une mesure dont la fidelite, mesuree entre 400 et 900
+    # minutes, est quasi nulle n'est pas affichee. C'est le cas du volume de
+    # passes progressives par 90 (-0,09) : aucun signal, et un percentile en
+    # plus tire vers le bas par le retrecissement des volumes (prior de 3 x 90
+    # minutes, qui pese d'autant plus que le joueur a peu joue).
+    reduit = echantillon_reduit(j.minutes)
+    court = pression_fiabilite_reduite() if reduit else {}
+    masquees = []
     lignes = []
     for cle_pct, cle_val, libelle, fmt, aide in PRESSION_LIGNES:
         val = d.get(cle_val)
         if val is None or pd.isna(val):
+            continue
+        if court.get(cle_val, 1.0) < FIDELITE_MIN_REDUIT:
+            masquees.append(libelle.lower())
             continue
         pct = d.get(cle_pct) if cle_pct else None
         lignes.append({"indicateur": libelle, "valeur": fmt.format(val),
@@ -1521,6 +1571,12 @@ def section_pression(j) -> None:
         ctx = pd.DataFrame()
 
     notes = []
+    if reduit:
+        notes.append(f"⚠️ **Moins de {MINUTES_FIABLES} minutes** : ces mesures reposent sur peu de passes, "
+                     "à lire comme une tendance et non comme un trait établi du joueur. Ses percentiles "
+                     "le situent parmi les joueurs de l'échantillon de référence, dont il ne fait pas partie."
+                     + (f" Non affiché sur cet échantillon : {', '.join(masquees)} (fidélité mesurée "
+                        "quasi nulle à ce volume de jeu)." if masquees else ""))
     if not ctx.empty and pd.notna(ctx.iloc[0]["jpl"]) and j.competition != "Jupiler Pro League":
         r = ctx.iloc[0]
         dp, dr = r["jpl"] - r["ici"], r["jpl_r"] - r["ici_r"]
@@ -1536,11 +1592,16 @@ def section_pression(j) -> None:
                  "pour prédire la saison suivante, quand le score en explique 15,5.")
     fia = pression_fiabilite()
     if fia:
+        # Echantillon reduit : la fidelite mesuree entre 400 et 900 minutes est
+        # donnee a cote de celle de la reference -- c'est elle qui vaut pour lui.
         fiab_txt = " · ".join(f"{k.replace('_', ' ')} {v:.2f}"
+                              + (f" → {court[k]:.2f}" if k in court else "")
                               for k, v in sorted(fia.items(), key=lambda x: -x[1]))
-        notes.append(f"Fidélité mesurée (matchs pairs vs impairs) : {fiab_txt}. Au-dessus de 0,60 la "
-                     "mesure décrit le joueur ; en dessous elle décrit surtout son équipe et son "
-                     "volume de jeu.")
+        notes.append(f"Fidélité mesurée (matchs pairs vs impairs) : {fiab_txt}. "
+                     + (f"La seconde valeur est celle des joueurs entre {MINUTES_PROFILS} et "
+                        f"{MINUTES_FIABLES} minutes, donc la sienne. " if court else "")
+                     + "Au-dessus de 0,60 la mesure décrit le joueur ; en dessous elle décrit surtout "
+                       "son équipe et son volume de jeu.")
     st.caption("  \n".join(notes))
 
 
@@ -1665,7 +1726,16 @@ def carte_joueur(j, extra=None) -> None:
     if extra is not None:
         extra()
 
-    section_profils(cle)
+    # Alerte d'echantillon : profils et jeu sous pression sont calcules des
+    # MINUTES_PROFILS, mais sous MINUTES_FIABLES ils ne valent pas ceux d'une
+    # saison pleine. Placee juste au-dessus des deux blocs qu'elle concerne.
+    if echantillon_reduit(j.minutes):
+        st.warning(
+            f"**Échantillon réduit : {j.minutes:.0f} minutes à ce poste**, moins de {MINUTES_FIABLES}. "
+            "Les profils RCSC et le jeu sous pression ci-dessous sont à prendre avec précaution : "
+            "quelques matchs suffisent encore à les déplacer. Le score, lui, est calculé comme pour "
+            f"tous les joueurs à partir de {MINUTES_PROFILS} minutes.", icon="⚠️")
+    section_profils(cle, j.minutes)
     section_pression(j)
 
     g1, g2 = st.columns([3, 2])
@@ -2159,6 +2229,13 @@ with (onglet_mon if MONITORING else
 
         res = res.copy()
         res["archetype_courant"] = archetype
+        # Repere d'echantillon reduit : seulement si le filtre laisse passer des
+        # joueurs sous MINUTES_FIABLES (au reglage par defaut, la colonne n'existe pas).
+        _reduits = res["minutes"].map(echantillon_reduit)
+        _col_prudence = []
+        if minutes_min < MINUTES_FIABLES and _reduits.any():
+            res["prudence"] = _reduits.map({True: "⚠", False: ""})
+            _col_prudence = ["prudence"]
         premier, dernier = page * PAR_PAGE + 1, page * PAR_PAGE + len(res)
         if profil_id:
             _tri = "correspondance au profil" if tri_profil == "Correspondance" else lecture.lower()
@@ -2175,9 +2252,14 @@ with (onglet_mon if MONITORING else
             column_order=["nom", "club", "competition", "pays", "niveau", "saison",
                           "score"] + (["role_milieu"] if archetype in ("SIX", "EIGHT") else [])
                          + _colonnes_profil + [("score_v8" if SC == "qualite_actuelle" else "qualite"),
-                          "age", "minutes", "pied_fort", "performance", "aj_niveau", "aj_age",
-                          "aj_traduction", "progression", "gros_matchs", "coef_adv", "rang_mondial"],
+                          "age", "minutes"] + _col_prudence + ["pied_fort", "performance", "aj_niveau",
+                          "aj_age", "aj_traduction", "progression", "gros_matchs", "coef_adv",
+                          "rang_mondial"],
             column_config={
+                "prudence": st.column_config.TextColumn(
+                    "⚠", width="small",
+                    help=f"Moins de {MINUTES_FIABLES} minutes à ce poste : profil RCSC et jeu sous "
+                         "pression calculés sur un échantillon réduit, à prendre avec précaution."),
                 "score": st.column_config.ProgressColumn(lecture, min_value=0, max_value=120, format="%.1f",
                                                          help=LECTURES[lecture]["aide"]),
                 "qualite": st.column_config.NumberColumn("Qualité", format="%.1f",
@@ -2206,6 +2288,10 @@ with (onglet_mon if MONITORING else
                 "progression": st.column_config.NumberColumn("Progression", help="Évolution réelle estimée (points de niveau) entre ses ~10 derniers matchs et le reste de la saison, hasard retiré : au-delà de ±3 = changement notable. Courbe dans la fiche."),
                 "coef_adv": st.column_config.NumberColumn("Coef adv.", help="Coefficient adversaire moyen : >1 = calendrier plus dur que son club"),
             })
+        if _col_prudence:
+            st.caption(f"⚠ = moins de {MINUTES_FIABLES} minutes à ce poste ({int(_reduits.sum())} joueur"
+                       f"{'s' if _reduits.sum() > 1 else ''} sur cette page) : profil RCSC et jeu sous "
+                       "pression calculés sur un échantillon réduit, à prendre avec précaution.")
         if n_pages > 1:
             p1, p2, p3 = st.columns([1, 2, 1])
             if p1.button("◀ 500 précédents", disabled=page == 0, width="stretch"):
