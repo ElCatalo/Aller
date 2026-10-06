@@ -445,7 +445,25 @@ LECTURES = {
         col="qualite_actuelle", rang="rang_qualite", pct="qualite_percentile", court="Qualité",
         aide="Performance projetée au niveau d'un club moyen de JPL, sans l'âge : "
              "ce que le joueur vaut aujourd'hui."),
+    # 06/10/2026 (Alex) : le Score V8 prive de son seul ajustement d'age. Celui-ci
+    # etant ADDITIF dans la formule (score = base + excellence - fragilite
+    # + ajust_niveau + ajust_age), le retirer est une soustraction exacte, pas
+    # une approximation -- aucune formule nouvelle n'est introduite.
+    "Score sans l'âge (performance + niveau)": dict(
+        col="score_sans_age", rang="rang_sans_age", pct="score_sans_age_percentile",
+        court="Score hors âge",
+        aide="Le Score privé de son seul ajustement d'âge : même performance, même ajustement "
+             "du niveau du club, mais un joueur de 31 ans n'est plus pénalisé pour son âge. "
+             "La lecture à prendre pour chercher un profil expérimenté."),
 }
+# Une base d'avant le 06/10/2026 n'a pas ces colonnes : sans ce retrait, choisir
+# cette lecture ferait echouer toutes les requetes de classement.
+try:
+    requete("SELECT score_sans_age FROM v_joueurs LIMIT 1")
+    SANS_AGE = True
+except duckdb.Error:
+    SANS_AGE = False
+    LECTURES.pop("Score sans l'âge (performance + niveau)", None)
 # Monitoring : une seule lecture, le Score (la Qualite actuelle repose sur une
 # calibration de saison) -- les fiches de saison ouvertes depuis l'onglet
 # restent donc sur le Score.
@@ -455,6 +473,21 @@ else:
     lecture = st.sidebar.radio("Lecture", list(LECTURES),
                                help="  \n".join(f"**{k}** : {v['aide']}" for k, v in LECTURES.items()))
 SC, RG, PCT, COURT = (LECTURES[lecture][k] for k in ("col", "rang", "pct", "court"))
+
+
+@st.cache_data(show_spinner=False)
+def buts_dispo() -> bool:
+    """La base contient-elle les buts / passes decisives ?
+
+    Ajoutes le 06/10/2026 (db_build.buts_passes). Une base construite avant ne
+    les a pas : la fiche doit continuer a s'afficher sans eux plutot que de
+    planter sur une colonne absente.
+    """
+    try:
+        requete("SELECT buts FROM v_joueurs LIMIT 1")
+        return True
+    except duckdb.Error:
+        return False
 
 
 @st.cache_data(ttl=600)
@@ -1542,23 +1575,51 @@ def carte_joueur(j, extra=None) -> None:
         if aides:
             st.caption(" · ".join(aides) + ".")
 
-    k_ = st.columns(6)
+    # Buts et passes decisives : A TITRE INDICATIF, ils n'entrent dans aucun
+    # score. Un ailier a 4 buts dans une ligue faible n'est pas meilleur qu'un
+    # ailier a 2 buts en Premier League -- c'est ce que dit deja le score. Les
+    # penalties sont detailles en petit : 15 buts dont 8 penalties, ce n'est pas
+    # 15 buts, et un total brut induirait en erreur.
+    _avec_buts = buts_dispo() and "buts" in j.index
+    k_ = st.columns(8 if _avec_buts else 6)
     _rang = f"rang mondial {int(j.rang_mondial)}" if pd.notna(j.rang_mondial) else None
     k_[0].metric("Score", n_(j.score_v8), _rang if SC == "score" else None,
                  delta_color="off", help=LECTURES["Score (performance + niveau + âge)"]["aide"])
     k_[1].metric("Qualité actuelle", n_(j.qualite), _rang if SC == "qualite_actuelle" else None,
                  delta_color="off", help=LECTURES["Qualité actuelle (niveau JPL)"]["aide"])
-    k_[2].metric("Âge", n_(j.age))
+    # Le rang mondial suit la lecture choisie : sur « Score sans l'age » il
+    # n'appartient ni au Score ni a la Qualite, on l'accroche donc a l'age, qui
+    # est precisement ce que cette lecture neutralise.
+    k_[2].metric("Âge", n_(j.age), _rang if SC == "score_sans_age" else None,
+                 delta_color="off",
+                 help=("Lecture « Score sans l'âge » : l'ajustement d'âge est retiré, "
+                       "ce rang ne pénalise donc pas les joueurs expérimentés.")
+                      if SC == "score_sans_age" else None)
     k_[3].metric("Minutes", n_(j.minutes, "{:.0f}"), f"{n_(j.matchs, '{:.0f}')} matchs")
-    k_[4].metric("Pied", j.pied_fort or "—")
-    k_[5].metric("Taille", n_(j.taille_cm, "{:.0f} cm"))
+    _i = 4
+    if _avec_buts:
+        _pen = j.buts_penalty if pd.notna(j.buts_penalty) else 0
+        k_[4].metric("Buts", f"{int(j.buts)}" if pd.notna(j.buts) else "—",
+                     f"dont {int(_pen)} pénalty" + ("s" if _pen > 1 else "") if _pen else None,
+                     delta_color="off",
+                     help="Buts marqués sur la saison, toutes compétitions de ce championnat. "
+                          "Donnée indicative : elle n'entre dans aucun score.")
+        k_[5].metric("Passes déc.", f"{int(j.passes_d)}" if pd.notna(j.passes_d) else "—",
+                     help="Passes décisives sur la saison. Indicatif : hors score. "
+                          "La création est mesurée par le pilier Création (xA, actions créées).")
+        _i = 6
+    k_[_i].metric("Pied", j.pied_fort or "—")
+    k_[_i + 1].metric("Taille", n_(j.taille_cm, "{:.0f} cm"))
 
     st.markdown(
         f"**Score {n_(j.score_v8)}** = performance {n_(j.performance)} "
         f"({n_(j.base)} de base {j.excellence:+.1f} excellence {-j.fragilite:+.1f} fragilité) "
         f"{j.aj_niveau:+.1f} niveau du club {j.aj_age:+.1f} âge  \n"
         f"**Qualité actuelle {n_(j.qualite)}** = performance {n_(j.performance)} "
-        f"{j.aj_traduction:+.1f} traduction au niveau JPL")
+        f"{j.aj_traduction:+.1f} traduction au niveau JPL"
+        + (f"  \n**Score sans l'âge {n_(j.score_sans_age)}** = le Score ci-dessus "
+           f"{-j.aj_age:+.1f}, c'est-à-dire sans son ajustement d'âge"
+           if SANS_AGE and pd.notna(j.get("score_sans_age")) else ""))
 
     b1, b2, b3, b4 = st.columns([1, 1, 1, 2])
     if b1.button(f"Ajouter à « {shortlist} »", width="stretch", key=f"add_{cle}"):
@@ -1678,6 +1739,14 @@ CHAMPS = f"""nom, club, competition, pays, niveau, saison, round({SC},1) AS scor
     round(gros_matchs_delta,1) AS gros_matchs_delta, archetype AS archetype_courant,
     profil_principal,
     playerId, squadId, iterationId, position"""
+# Buts et passes decisives : ajoutes a la liste SEULEMENT si la base les
+# contient (cf. buts_dispo). Une base d'avant le 06/10/2026 n'a pas ces
+# colonnes, et toutes les requetes de la plateforme passent par CHAMPS : les
+# demander sans condition casserait l'application entiere.
+if buts_dispo():
+    CHAMPS += ", buts, passes_d, buts_penalty"
+if SANS_AGE:
+    CHAMPS += ", round(score_sans_age,1) AS score_sans_age"
 
 
 # ================================================================= monitoring
