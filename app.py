@@ -667,6 +667,9 @@ if recherche and len(recherche.strip()) >= 2:
 
 st.sidebar.markdown("**Championnats**")
 exclure_top5 = st.sidebar.checkbox("Exclure les 5 grands championnats", value=False)
+# La MLS seule : MLS Next Pro (reserves) et les USL sont d'autres championnats,
+# ils restent dans la liste.
+exclure_mls = st.sidebar.checkbox("Exclure la MLS", value=False)
 pays_dispo = sorted([p for p in comp_df["pays"].dropna().unique()])
 pays = st.sidebar.multiselect("Pays", pays_dispo)
 niveaux = st.sidebar.multiselect("Niveau de division", [1, 2, 3, 4, 5],
@@ -935,6 +938,8 @@ if recherche:
     where.append("lower(nom) LIKE ?"); params.append(f"%{recherche.lower()}%")
 if exclure_top5:
     where.append("NOT top5_europe")
+if exclure_mls:
+    where.append("competition <> 'Major League Soccer'")
 if pays:
     where.append(f"pays IN ({','.join('?' * len(pays))})"); params += pays
 if niveaux:
