@@ -356,8 +356,105 @@ def connexion():
 
 
 @st.cache_data(ttl=600)
-def requete(sql: str, params: tuple = ()) -> pd.DataFrame:
+def _requete(sql: str, params: tuple = ()) -> pd.DataFrame:
     return connexion().execute(sql, params).df()
+
+
+# ------------------------------------------------ poids de l'age et du niveau
+# (06/10/2026, Alex) Le Score est ADDITIF dans la V10 :
+#     score = score_performance + ajust_niveau + ajust_age
+# et les deux ajustements sont stockes tels quels dans la base (verifie : 0 ecart
+# sur 76 042 lignes). Changer leur poids est donc une multiplication exacte, sans
+# relancer la pipeline ni rien telecharger : la plateforme recalcule a la volee
+#     score = score_performance + k_niveau x ajust_niveau + k_age x ajust_age
+# (le plafond de l'ajustement d'age est multiplie avec lui), puis les rangs et percentiles par archetype. A 100 % / 100 % rien n'est
+# recalcule : les requetes lisent les colonnes de la base, comme avant.
+#
+# La ponderation est faite ICI, dans requete(), et pas requete par requete : toute
+# lecture de v_joueurs, de fait_joueur_saison ou de mon.mon_joueur passe par une
+# sous-requete qui remplace les colonnes derivees du Score. Classement, fiche,
+# effectif, shortlists, recherche et monitoring restent ainsi coherents entre eux,
+# y compris une requete ajoutee plus tard.
+#
+# Non concerne : la Qualite actuelle. Elle n'a pas d'ajustement d'age, et sa
+# traduction au niveau JPL est une pente MESUREE sur les transferts, pas un poids
+# choisi -- la multiplier n'aurait pas de sens.
+POIDS_DEFAUT = (1.0, 1.0)      # (age, niveau), multiplicateurs des ajustements de la V10
+
+
+def poids_courants() -> tuple[float, float]:
+    """(k_age, k_niveau) regles dans la barre laterale, pour cette session."""
+    return (st.session_state.get("poids_age", 100) / 100,
+            st.session_state.get("poids_niveau", 100) / 100)
+
+
+@st.cache_data(show_spinner=False)
+def _colonnes(table: str) -> frozenset:
+    return frozenset(r[0] for r in connexion().execute(f"DESCRIBE {table}").fetchall())
+
+
+def _rangs(col: str, par: str, rang: str, pct: str | None) -> str:
+    """Rang (methode min, comme la pipeline) et percentile (rang moyen / effectif,
+    comme rank(pct=True) de pandas) de `col` a l'interieur de `par`."""
+    sql = (f"CASE WHEN {col} IS NOT NULL THEN rank() OVER (PARTITION BY {par} "
+           f"ORDER BY {col} DESC NULLS LAST) END AS {rang}")
+    if pct:
+        sql += (f", CASE WHEN {col} IS NOT NULL THEN round(100.0 * (rank() OVER (PARTITION BY {par} "
+                f"ORDER BY {col} NULLS LAST) + (count(*) OVER (PARTITION BY {par}, {col}) - 1) / 2.0) "
+                f"/ count({col}) OVER (PARTITION BY {par}), 1) END AS {pct}")
+    return sql
+
+
+def _table_ponderee(table: str, ka: float, kn: float) -> str:
+    """Sous-requete equivalente a `table`, Score et derives recalcules."""
+    cols = _colonnes(table)
+    # Ecrit a partir du Score STOCKE (score + (k - 1) x ajustement) et non
+    # recompose depuis la performance : la pipeline arrondit le Score apres
+    # l'addition, ses trois termes separement, et la somme recomposee s'en
+    # ecarte de 0,01 sur un tiers des lignes. Ainsi 100 % redonne la base au
+    # centieme pres, et le rang ne saute pas en quittant le reglage d'origine.
+    d_niv, d_age = f"ajust_niveau * {kn - 1!r}", f"ajust_age * {ka - 1!r}"
+    score = f"round(score + {d_niv} + {d_age}, 2)"
+    # "+ 0.0" : un ajustement negatif multiplie par 0 donne -0.0, que la fiche
+    # afficherait « -0.0 âge ».
+    valeurs = [f"round(ajust_age * {ka!r}, 2) + 0.0 AS ajust_age",
+               f"round(ajust_niveau * {kn!r}, 2) + 0.0 AS ajust_niveau", f"{score} AS score"]
+    if table == "mon.mon_joueur":
+        rangs = [_rangs("score", "periode_jours, archetype", "rang", None)]
+    else:
+        rangs = [_rangs("score", "archetype", "rang_archetype", "score_percentile")]
+        if "score_sans_age" in cols:
+            # Pas d'arrondi ici : la base stocke score - ajust_age tel quel, et
+            # ses rangs sont calcules sur cette valeur non arrondie.
+            valeurs.append(f"score_sans_age + {d_niv} AS score_sans_age")
+            rangs.append(_rangs("score_sans_age", "archetype", "rang_sans_age", "score_sans_age_percentile"))
+    return (f"(SELECT * REPLACE ({', '.join(rangs)}) "
+            f"FROM (SELECT * REPLACE ({', '.join(valeurs)}) FROM {table}))")
+
+
+_TABLES_PONDEREES = re.compile(
+    r"\b(FROM|JOIN)\s+(v_joueurs|fait_joueur_saison|mon\.mon_joueur)\b(\s+\w+)?", re.IGNORECASE)
+# Mot qui suit le nom de la table : si c'est un de ceux-ci, la table n'avait pas
+# d'alias et la sous-requete prend son nom (les requetes ecrivent v_joueurs.playerId).
+_MOTS_SQL = {"where", "left", "right", "inner", "cross", "join", "order", "group", "limit",
+             "using", "on", "qualify", "union"}
+
+
+def sql_pondere(sql: str, ka: float, kn: float) -> str:
+    def remplace(m: re.Match) -> str:
+        mot, table, suite = m.group(1), m.group(2), m.group(3) or ""
+        sous = _table_ponderee(table.lower(), ka, kn)
+        if suite.strip() and suite.strip().lower() not in _MOTS_SQL:
+            return f"{mot} {sous}{suite}"                      # alias deja ecrit dans la requete
+        return f"{mot} {sous} AS {table.split('.')[-1]}{suite}"
+    return _TABLES_PONDEREES.sub(remplace, sql)
+
+
+def requete(sql: str, params: tuple = ()) -> pd.DataFrame:
+    poids = poids_courants()
+    if poids != POIDS_DEFAUT:
+        sql = sql_pondere(sql, *poids)
+    return _requete(sql, params)
 
 
 @st.cache_data(ttl=600)
@@ -502,6 +599,44 @@ else:
                                help="  \n".join(f"**{k}** : {v['aide']}" for k, v in LECTURES.items()))
 SC, RG, PCT, COURT = (LECTURES[lecture][k] for k in ("col", "rang", "pct", "court"))
 
+# Poids de l'age et du niveau du club dans le Score (cf. requete()). Reglage de
+# session : il vaut pour toute la plateforme tant que l'on reste connecte, et
+# revient a 100 % a la connexion suivante.
+K_AGE, K_NIVEAU = poids_courants()
+POIDS_MODIFIES = (K_AGE, K_NIVEAU) != POIDS_DEFAUT
+
+
+def _poids_origine() -> None:
+    st.session_state["poids_age"] = st.session_state["poids_niveau"] = 100
+
+
+with st.sidebar.expander("⚖️ Poids de l'âge et du niveau" + (" · modifiés" if POIDS_MODIFIES else ""),
+                         expanded=POIDS_MODIFIES):
+    # Valeurs posees dans la session avant la creation des curseurs (et non en
+    # valeur par defaut du widget) : le bouton de retour les modifie par la session.
+    st.session_state.setdefault("poids_age", 100)
+    st.session_state.setdefault("poids_niveau", 100)
+    st.slider("Poids de l'âge", 0, 200, step=10, format="%d %%", key="poids_age",
+              help="100 % = réglage d'origine. 0 % = l'âge ne compte plus dans le Score. "
+                   "200 % = un joueur jeune est deux fois plus avantagé, un joueur âgé deux fois "
+                   "plus pénalisé.")
+    st.slider("Poids du niveau du club", 0, 200, step=10, format="%d %%", key="poids_niveau",
+              help="100 % = réglage d'origine. 0 % = le niveau du club et de son championnat ne compte "
+                   "plus : le Score se rapproche de la performance pure. 200 % = l'écart entre gros et "
+                   "petits clubs est doublé.")
+    _pente_age = float(PARAMS.get("age_pente", 1.6)) * K_AGE
+    _plafond_age = float(PARAMS.get("age_plafond", 12)) * K_AGE
+    _pente_niv = float(PARAMS.get("niveau_pente", 40)) * K_NIVEAU
+    st.caption(
+        f"**Âge** : {_pente_age:.1f} point par année d'écart à {float(PARAMS.get('age_pivot', 24)):.0f} ans "
+        f"(27 pour un gardien), plafonné à ±{_plafond_age:.0f}.  \n"
+        f"**Niveau** : {_pente_niv:.0f} points par point de rating du club, autour de "
+        f"{float(PARAMS.get('niveau_reference', 0.49)):.2f}.  \n"
+        "Score, Score hors âge, rangs et percentiles sont recalculés partout, monitoring compris. "
+        "La Qualité actuelle ne change pas : sa traduction au niveau JPL est mesurée, pas réglée.")
+    st.button("Revenir aux poids d'origine", on_click=_poids_origine, disabled=not POIDS_MODIFIES,
+              width="stretch")
+
 
 CHAMPS = f"""nom, club, competition, pays, niveau, saison, round({SC},1) AS score,
     round(qualite_actuelle,1) AS qualite, round(score,1) AS score_v8,
@@ -608,7 +743,7 @@ recherche = st.sidebar.text_input(
 
 
 @st.cache_data(show_spinner=False)
-def chercher_partout(texte: str, saisons_filtre: tuple) -> pd.DataFrame:
+def chercher_partout(texte: str, saisons_filtre: tuple, poids: tuple = POIDS_DEFAUT) -> pd.DataFrame:
     """Tous les joueurs-saison dont le nom correspond, TOUS POSTES confondus.
 
     L'ancien comportement ne cherchait que dans l'archetype ouvert : un joueur
@@ -617,6 +752,9 @@ def chercher_partout(texte: str, saisons_filtre: tuple) -> pd.DataFrame:
     archetypes sort autant de fois -- a lui de choisir lequel il veut voir,
     plutot que de deviner a sa place (un CB qui apparait aussi en FB n'est pas
     le meme dossier).
+
+    poids : sert seulement de cle de cache (le Score depend des poids regles
+    dans la barre laterale, appliques par requete()).
     """
     ou, pa = ["lower(nom) LIKE ?"], [f"%{texte.lower()}%"]
     if saisons_filtre:
@@ -631,7 +769,7 @@ def chercher_partout(texte: str, saisons_filtre: tuple) -> pd.DataFrame:
 
 
 if recherche and len(recherche.strip()) >= 2:
-    _trouves = chercher_partout(recherche.strip(), tuple(saison))
+    _trouves = chercher_partout(recherche.strip(), tuple(saison), poids_courants())
     with st.sidebar.container(border=True):
         if _trouves.empty:
             st.caption(f"Aucun joueur pour « {recherche} »"
@@ -2149,6 +2287,13 @@ fiche_param = st.query_params.get("fiche")
 # depuis le Monitoring y reste : le bouton retour ramene au classement.
 with (onglet_mon if MONITORING else
       onglet_rcsc if VUE_RCSC else onglet_saison):
+    # Rappel visible sur chaque vue : un Score lu avec des poids modifies ne doit
+    # jamais pouvoir etre pris pour le Score d'origine.
+    if POIDS_MODIFIES:
+        st.info(f"**Poids modifiés** — âge {K_AGE * 100:.0f} %, niveau du club {K_NIVEAU * 100:.0f} %. "
+                "Score, Score hors âge, rangs et percentiles sont recalculés avec ces poids ; la Qualité "
+                "actuelle est inchangée. Réglage dans la barre latérale, « ⚖️ Poids de l'âge et du niveau ».",
+                icon="⚖️")
     # ----------------------------------------------------------------- vue fiche
     # Ouverte depuis "Ses autres saisons" : prime sur la vue club et la recherche,
     # le bouton retour ramene la ou l'on etait (effectif du club ou recherche).
@@ -2273,8 +2418,8 @@ with (onglet_mon if MONITORING else
                     "Score", format="%.1f", help=LECTURES["Score (performance + niveau + âge)"]["aide"]),
                 "aj_niveau": st.column_config.NumberColumn(
                     "Aj. niveau", format="%+.1f",
-                    help="Ajustement du Score pour le niveau du club : 40 points par point de rating "
-                         "d'écart avec la référence (0,49), linéaire."),
+                    help=f"Ajustement du Score pour le niveau du club : {_pente_niv:.0f} points par point "
+                         "de rating d'écart avec la référence (0,49), linéaire."),
                 "aj_traduction": st.column_config.NumberColumn(
                     "Trad. JPL", format="%+.1f",
                     help="Traduction au niveau JPL (lecture Qualité actuelle) : de combien sa performance "
@@ -2348,7 +2493,7 @@ FORMATION_4231 = [
 
 
 @st.cache_data(show_spinner=False)
-def effectif_rcsc(saison_choisie: str) -> pd.DataFrame:
+def effectif_rcsc(saison_choisie: str, poids: tuple = POIDS_DEFAUT) -> pd.DataFrame:
     """Joueurs du RSC Charleroi evalues par la plateforme sur cette saison.
 
     Un joueur de DEFENSE_CENTRAL_MIDFIELD sort DEUX fois (archetypes SIX et
@@ -2427,7 +2572,7 @@ with onglet_rcsc:
         else:
             saison_rcsc = st.radio("Saison", _saisons_rcsc, horizontal=True,
                                    key="saison_rcsc")
-            eff = effectif_rcsc(saison_rcsc)
+            eff = effectif_rcsc(saison_rcsc, poids_courants())
 
             if eff.empty:
                 st.warning(f"Aucun joueur évalué sur {saison_rcsc}.")
@@ -2547,7 +2692,7 @@ st.divider()
 
 
 @st.cache_data(show_spinner=False)
-def enrichir_liste(player_ids: tuple, lecture_col: str) -> pd.DataFrame:
+def enrichir_liste(player_ids: tuple, lecture_col: str, poids: tuple = POIDS_DEFAUT) -> pd.DataFrame:
     """Valeurs actuelles des joueurs d'une liste, meilleure ligne par joueur.
 
     Un joueur peut avoir plusieurs lignes (saisons, postes) : on garde celle de
@@ -2596,7 +2741,7 @@ for _ong, nom_liste in zip(_onglets, _onglets_noms + ["exclus"]):
                     f"(bouton « ➕ Ajouter à « {nom_liste} » »).")
             continue
 
-        vivant = enrichir_liste(tuple(contenu_df["playerId"].tolist()), SC)
+        vivant = enrichir_liste(tuple(contenu_df["playerId"].tolist()), SC, poids_courants())
         df = contenu_df.merge(vivant, on="playerId", how="left")
         # Valeurs a jour quand le joueur est encore dans le build, valeurs
         # figees a l'ajout sinon (joueur sorti du perimetre).
