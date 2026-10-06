@@ -456,6 +456,21 @@ LECTURES = {
              "du niveau du club, mais un joueur de 31 ans n'est plus pénalisé pour son âge. "
              "La lecture à prendre pour chercher un profil expérimenté."),
 }
+@st.cache_data(show_spinner=False)
+def buts_dispo() -> bool:
+    """La base contient-elle les buts / passes decisives ?
+
+    Ajoutes le 06/10/2026 (db_build.buts_passes). Une base construite avant ne
+    les a pas : la fiche doit continuer a s'afficher sans eux plutot que de
+    planter sur une colonne absente.
+    """
+    try:
+        requete("SELECT buts FROM v_joueurs LIMIT 1")
+        return True
+    except duckdb.Error:
+        return False
+
+
 # Une base d'avant le 06/10/2026 n'a pas ces colonnes : sans ce retrait, choisir
 # cette lecture ferait echouer toutes les requetes de classement.
 try:
@@ -475,19 +490,30 @@ else:
 SC, RG, PCT, COURT = (LECTURES[lecture][k] for k in ("col", "rang", "pct", "court"))
 
 
-@st.cache_data(show_spinner=False)
-def buts_dispo() -> bool:
-    """La base contient-elle les buts / passes decisives ?
-
-    Ajoutes le 06/10/2026 (db_build.buts_passes). Une base construite avant ne
-    les a pas : la fiche doit continuer a s'afficher sans eux plutot que de
-    planter sur une colonne absente.
-    """
-    try:
-        requete("SELECT buts FROM v_joueurs LIMIT 1")
-        return True
-    except duckdb.Error:
-        return False
+CHAMPS = f"""nom, club, competition, pays, niveau, saison, round({SC},1) AS score,
+    round(qualite_actuelle,1) AS qualite, round(score,1) AS score_v8,
+    round(ajust_traduction,1) AS aj_traduction, round(ajust_niveau,1) AS aj_niveau,
+    role_milieu, round(age_years,1) AS age, minutes_jouees AS minutes, pied_fort,
+    round(score_performance,1) AS performance,
+    round(ajust_age,1) AS aj_age, round(progression_credible,1) AS progression,
+    round(adv_ecart_haut_percentile,0) AS gros_matchs, round(opp_coef_avg,3) AS coef_adv,
+    {RG} AS rang_mondial, round({PCT},1) AS percentile,
+    round(base,1) AS base, round(excellence,1) AS excellence, round(fragilite,1) AS fragilite,
+    pilier_fort, pilier_faible, taille_cm, n_matches_oppw AS matchs,
+    position AS poste, side, round(attdef_coef_att_avg,3) AS coef_att,
+    round(attdef_coef_def_avg,3) AS coef_def, round(club_rating,3) AS rating_club,
+    round(competition_avg_rating,3) AS rating_ligue,
+    round(gros_matchs_delta,1) AS gros_matchs_delta, archetype AS archetype_courant,
+    profil_principal,
+    playerId, squadId, iterationId, position"""
+# Buts et passes decisives : ajoutes a la liste SEULEMENT si la base les
+# contient (cf. buts_dispo). Une base d'avant le 06/10/2026 n'a pas ces
+# colonnes, et toutes les requetes de la plateforme passent par CHAMPS : les
+# demander sans condition casserait l'application entiere.
+if buts_dispo():
+    CHAMPS += ", buts, passes_d, buts_penalty"
+if SANS_AGE:
+    CHAMPS += ", round(score_sans_age,1) AS score_sans_age"
 
 
 @st.cache_data(ttl=600)
@@ -931,23 +957,13 @@ if not MONITORING and not VUE_RCSC:
     page = min(page, n_pages - 1)
     st.session_state["page"] = page
 
+    # Le classement lit EXACTEMENT les memes colonnes que la fiche : c'est de
+    # cette requete que sort la ligne passee a carte_joueur quand on clique un
+    # joueur. Elle dupliquait la liste a la main, et chaque colonne ajoutee a
+    # CHAMPS (buts, passes decisives, score hors age...) manquait donc dans la
+    # fiche ouverte depuis le classement -- le chemin le plus frequent.
     res = requete(f"""
-        SELECT nom, club, competition, pays, niveau, saison, round({SC},1) AS score,
-               round(qualite_actuelle,1) AS qualite, round(score,1) AS score_v8,
-               round(ajust_traduction,1) AS aj_traduction, round(ajust_niveau,1) AS aj_niveau,
-               role_milieu, round(age_years,1) AS age, minutes_jouees AS minutes, pied_fort,
-               round(score_performance,1) AS performance,
-               round(ajust_age,1) AS aj_age, round(progression_credible,1) AS progression,
-               round(adv_ecart_haut_percentile,0) AS gros_matchs, round(opp_coef_avg,3) AS coef_adv,
-               {RG} AS rang_mondial, round({PCT},1) AS percentile,
-               round(base,1) AS base, round(excellence,1) AS excellence,
-               round(fragilite,1) AS fragilite, pilier_fort, pilier_faible, taille_cm,
-               n_matches_oppw AS matchs, position AS poste, side,
-               round(attdef_coef_att_avg,3) AS coef_att, round(attdef_coef_def_avg,3) AS coef_def,
-               round(club_rating,3) AS rating_club, round(competition_avg_rating,3) AS rating_ligue,
-               round(gros_matchs_delta,1) AS gros_matchs_delta,
-               profil_principal,
-               playerId, squadId, iterationId, position{_extra_select}
+        SELECT {CHAMPS}{_extra_select}
         FROM v_joueurs WHERE {' AND '.join(where)}
         ORDER BY {_ordre} LIMIT {PAR_PAGE} OFFSET {page * PAR_PAGE}""", tuple(_extra_params + params))
 
@@ -1581,35 +1597,48 @@ def carte_joueur(j, extra=None) -> None:
     # penalties sont detailles en petit : 15 buts dont 8 penalties, ce n'est pas
     # 15 buts, et un total brut induirait en erreur.
     _avec_buts = buts_dispo() and "buts" in j.index
-    k_ = st.columns(8 if _avec_buts else 6)
+    # Les trois lectures cote a cote : meme performance terrain, lue de trois
+    # manieres. Les voir ensemble evite de changer de lecture dans la barre
+    # laterale juste pour comparer.
+    _avec_sans_age = SANS_AGE and "score_sans_age" in j.index and pd.notna(j.score_sans_age)
+    # Le rang mondial s'affiche sous la lecture active, quelle qu'elle soit.
     _rang = f"rang mondial {int(j.rang_mondial)}" if pd.notna(j.rang_mondial) else None
-    k_[0].metric("Score", n_(j.score_v8), _rang if SC == "score" else None,
-                 delta_color="off", help=LECTURES["Score (performance + niveau + âge)"]["aide"])
-    k_[1].metric("Qualité actuelle", n_(j.qualite), _rang if SC == "qualite_actuelle" else None,
-                 delta_color="off", help=LECTURES["Qualité actuelle (niveau JPL)"]["aide"])
-    # Le rang mondial suit la lecture choisie : sur « Score sans l'age » il
-    # n'appartient ni au Score ni a la Qualite, on l'accroche donc a l'age, qui
-    # est precisement ce que cette lecture neutralise.
-    k_[2].metric("Âge", n_(j.age), _rang if SC == "score_sans_age" else None,
-                 delta_color="off",
-                 help=("Lecture « Score sans l'âge » : l'ajustement d'âge est retiré, "
-                       "ce rang ne pénalise donc pas les joueurs expérimentés.")
-                      if SC == "score_sans_age" else None)
-    k_[3].metric("Minutes", n_(j.minutes, "{:.0f}"), f"{n_(j.matchs, '{:.0f}')} matchs")
-    _i = 4
+    _pen = j.buts_penalty if _avec_buts and pd.notna(j.buts_penalty) else 0
+    _mets = [
+        ("Score", n_(j.score_v8), _rang if SC == "score" else None,
+         LECTURES["Score (performance + niveau + âge)"]["aide"]),
+        ("Qualité actuelle", n_(j.qualite), _rang if SC == "qualite_actuelle" else None,
+         LECTURES["Qualité actuelle (niveau JPL)"]["aide"]),
+    ]
+    if _avec_sans_age:
+        _mets.append(("Score hors âge", n_(j.score_sans_age),
+                      _rang if SC == "score_sans_age" else None,
+                      LECTURES["Score sans l'âge (performance + niveau)"]["aide"]))
+    _mets += [("Âge", n_(j.age), None, None),
+              ("Minutes", n_(j.minutes, "{:.0f}"), f"{n_(j.matchs, '{:.0f}')} matchs", None)]
     if _avec_buts:
-        _pen = j.buts_penalty if pd.notna(j.buts_penalty) else 0
-        k_[4].metric("Buts", f"{int(j.buts)}" if pd.notna(j.buts) else "—",
-                     f"dont {int(_pen)} pénalty" + ("s" if _pen > 1 else "") if _pen else None,
-                     delta_color="off",
-                     help="Buts marqués sur la saison, toutes compétitions de ce championnat. "
-                          "Donnée indicative : elle n'entre dans aucun score.")
-        k_[5].metric("Passes déc.", f"{int(j.passes_d)}" if pd.notna(j.passes_d) else "—",
-                     help="Passes décisives sur la saison. Indicatif : hors score. "
-                          "La création est mesurée par le pilier Création (xA, actions créées).")
-        _i = 6
-    k_[_i].metric("Pied", j.pied_fort or "—")
-    k_[_i + 1].metric("Taille", n_(j.taille_cm, "{:.0f} cm"))
+        _mets += [
+            ("Buts", f"{int(j.buts)}" if pd.notna(j.buts) else "—",
+             # « pén. » et non « pénaltys » : le libelle d'un delta est tronque
+             # des que la colonne descend sous ~200 px, et c'est justement le
+             # chiffre qu'Alex veut voir.
+             (f"dont {int(_pen)} pén." if _pen else None),
+             "Buts marqués sur la saison, toutes compétitions de ce championnat. "
+             "Donnée indicative : elle n'entre dans aucun score."),
+            ("Passes déc.", f"{int(j.passes_d)}" if pd.notna(j.passes_d) else "—", None,
+             "Passes décisives sur la saison. Indicatif : hors score. "
+             "La création est mesurée par le pilier Création (xA, actions créées)."),
+        ]
+    _mets += [("Pied", j.pied_fort or "—", None, None),
+              ("Taille", n_(j.taille_cm, "{:.0f} cm"), None, None)]
+    # AU PLUS 5 PAR LIGNE. Avec les trois lectures, les buts et les passes on
+    # monte a 9 metriques : sur une seule ligne, Streamlit tronque les libelles
+    # ET les valeurs (« S… », « 72… », « MINU… ») des 1 400 px -- illisible.
+    # st.columns(5) a chaque ligne garde aussi les colonnes alignees entre elles.
+    for _debut in range(0, len(_mets), 5):
+        _cols = st.columns(5)
+        for _col, (_lab, _val, _delta, _aide) in zip(_cols, _mets[_debut:_debut + 5]):
+            _col.metric(_lab, _val, _delta, delta_color="off", help=_aide)
 
     st.markdown(
         f"**Score {n_(j.score_v8)}** = performance {n_(j.performance)} "
@@ -1723,30 +1752,6 @@ def carte_joueur(j, extra=None) -> None:
             st.caption("Une seule saison évaluée à ce poste pour ce joueur.")
 
 
-CHAMPS = f"""nom, club, competition, pays, niveau, saison, round({SC},1) AS score,
-    round(qualite_actuelle,1) AS qualite, round(score,1) AS score_v8,
-    round(ajust_traduction,1) AS aj_traduction, round(ajust_niveau,1) AS aj_niveau,
-    role_milieu, round(age_years,1) AS age, minutes_jouees AS minutes, pied_fort,
-    round(score_performance,1) AS performance,
-    round(ajust_age,1) AS aj_age, round(progression_credible,1) AS progression,
-    round(adv_ecart_haut_percentile,0) AS gros_matchs, round(opp_coef_avg,3) AS coef_adv,
-    {RG} AS rang_mondial, round({PCT},1) AS percentile,
-    round(base,1) AS base, round(excellence,1) AS excellence, round(fragilite,1) AS fragilite,
-    pilier_fort, pilier_faible, taille_cm, n_matches_oppw AS matchs,
-    position AS poste, side, round(attdef_coef_att_avg,3) AS coef_att,
-    round(attdef_coef_def_avg,3) AS coef_def, round(club_rating,3) AS rating_club,
-    round(competition_avg_rating,3) AS rating_ligue,
-    round(gros_matchs_delta,1) AS gros_matchs_delta, archetype AS archetype_courant,
-    profil_principal,
-    playerId, squadId, iterationId, position"""
-# Buts et passes decisives : ajoutes a la liste SEULEMENT si la base les
-# contient (cf. buts_dispo). Une base d'avant le 06/10/2026 n'a pas ces
-# colonnes, et toutes les requetes de la plateforme passent par CHAMPS : les
-# demander sans condition casserait l'application entiere.
-if buts_dispo():
-    CHAMPS += ", buts, passes_d, buts_penalty"
-if SANS_AGE:
-    CHAMPS += ", round(score_sans_age,1) AS score_sans_age"
 
 
 # ================================================================= monitoring
