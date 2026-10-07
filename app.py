@@ -22,6 +22,7 @@ import tomllib
 from pathlib import Path
 
 import duckdb
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -1748,6 +1749,172 @@ def section_pression(j) -> None:
     st.caption("  \n".join(notes))
 
 
+# ================================================================= heatmap
+# Carte des touches de balle (Etude_Pression_Passes/09_heatmap.py). Les actions
+# sont placees a leurs COORDONNEES reelles (evenements Impect), sur une grille
+# de 2,5 m : rien a voir avec les zones des KPI de saison. Deux fichiers parquet
+# a cote de l'app (saisons terminees / saison en cours), lus directement -- ils
+# ne passent pas par la base, qui est deja pres de la limite de taille.
+HEATMAP_FICHIERS = sorted({*_ICI.glob("heatmap_*.parquet"), *(_ICI / "data").glob("heatmap_*.parquet")})
+TERRAIN_L, TERRAIN_l = 105.0, 68.0
+# mode -> couches additionnees (cf. 09_heatmap.py : off = passes, receptions,
+# tirs ; def = interceptions, degagements, contres, duels, ballons recuperes, arrets)
+HEATMAP_MODES = {"Toutes les touches": ("off", "def"), "Touches offensives": ("off",),
+                 "Interventions défensives": ("def",)}
+# Une seule teinte, du papier de la page au sarcelle fonce : c'est une intensite.
+HEATMAP_ECHELLE = [[0.0, "#FBFBF9"], [0.12, "#E3EEEC"], [0.35, "#A3C9C4"], [0.6, "#5A9E98"],
+                   [0.8, "#1F6F6B"], [1.0, "#0D3F3C"]]
+# Limites des zones Impect, en metres depuis le centre du terrain.
+TIERS = [("Tiers défensif", -52.5, -17.5), ("Tiers médian", -17.5, 17.5), ("Tiers offensif", 17.5, 52.5)]
+COULOIRS = [("Aile gauche", 20.2, 34.0), ("Demi-espace gauche", 9.2, 20.2), ("Axe", -9.2, 9.2),
+            ("Demi-espace droit", -20.2, -9.2), ("Aile droite", -34.0, -20.2)]
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def heatmap_joueur(player_id: int, squad_id: int, iteration_id: int, position: str) -> dict | None:
+    """Les deux couches (offensive, defensive) d'une fiche, ou None."""
+    if not HEATMAP_FICHIERS:
+        return None
+    liste = ", ".join("'" + str(f).replace("'", "''") + "'" for f in HEATMAP_FICHIERS)
+    try:
+        d = connexion().execute(
+            f"""SELECT * FROM read_parquet([{liste}], union_by_name = true)
+                WHERE playerId = ? AND iterationId = ? AND squadId = ? AND position = ?""",
+            (player_id, iteration_id, squad_id, position)).df()
+    except duckdb.Error:
+        return None
+    if d.empty:
+        return None
+    r = d.sort_values("n_off", ascending=False).iloc[0]
+    nx, ny = int(r["nx"]), int(r["ny"])
+    grille = lambda b: np.frombuffer(bytes(b), dtype="<u2").reshape(nx, ny).astype(float)   # noqa: E731
+    return {"off": grille(r["off"]), "def": grille(r["def"]), "complet": bool(r["complet"]),
+            "n_tirs": int(r["n_tirs"]), "n_matchs": int(r["n_matchs"])}
+
+
+def _lisser(g: np.ndarray, sigma: float) -> np.ndarray:
+    """Flou gaussien separable, bords en miroir : une touche le long de la ligne
+    ne « fuit » pas hors du terrain, ce qui effacerait les joueurs de couloir."""
+    r = max(1, int(3 * sigma))
+    k = np.exp(-0.5 * (np.arange(-r, r + 1) / sigma) ** 2)
+    k /= k.sum()
+    g = np.pad(g, r, mode="reflect")
+    g = np.apply_along_axis(np.convolve, 0, g, k, "valid")
+    return np.apply_along_axis(np.convolve, 1, g, k, "valid")
+
+
+def _lissage_cases(n: int) -> float:
+    """Ecart-type du flou, en cases : plus le joueur a de touches, plus la carte
+    peut etre fine sans devenir un nuage de points."""
+    return 1.2 if n >= 1500 else 1.6 if n >= 500 else 2.2
+
+
+def graphe_heatmap(g: np.ndarray) -> go.Figure:
+    """Carte d'une grille (nx, ny) de touches : attaque vers la droite, cote
+    gauche du joueur en haut."""
+    nx, ny = g.shape
+    z = _lisser(g, _lissage_cases(int(g.sum())))
+    z = z / z.max() if z.max() > 0 else z
+    xs = (np.arange(nx) + 0.5) * TERRAIN_L / nx - TERRAIN_L / 2
+    ys = (np.arange(ny) + 0.5) * TERRAIN_l / ny - TERRAIN_l / 2
+    fig = go.Figure(go.Heatmap(
+        z=z.T, x=xs, y=ys, customdata=g.T, zsmooth="best", zmin=0, zmax=1,
+        colorscale=HEATMAP_ECHELLE, showscale=False,
+        hovertemplate="%{customdata:.0f} touche(s) dans cette case de 2,5 m<extra></extra>"))
+    L, l = TERRAIN_L / 2, TERRAIN_l / 2
+    trait = dict(color="#3A3C40", width=1)
+    lignes = [dict(type="rect", x0=-L, x1=L, y0=-l, y1=l),
+              dict(type="line", x0=0, x1=0, y0=-l, y1=l),
+              dict(type="circle", x0=-9.15, x1=9.15, y0=-9.15, y1=9.15)]
+    for sens in (-1, 1):       # surfaces, 6 metres, but, de chaque cote
+        lignes += [dict(type="rect", x0=sens * L, x1=sens * (L - 16.5), y0=-20.16, y1=20.16),
+                   dict(type="rect", x0=sens * L, x1=sens * (L - 5.5), y0=-9.16, y1=9.16),
+                   dict(type="rect", x0=sens * L, x1=sens * (L + 1.8), y0=-3.66, y1=3.66),
+                   dict(type="circle", x0=sens * (L - 11) - 0.3, x1=sens * (L - 11) + 0.3, y0=-0.3, y1=0.3)]
+    fig.update_layout(
+        shapes=[dict(line=trait, opacity=0.55, layer="above", **f) for f in lignes],
+        height=390, margin=dict(l=4, r=4, t=6, b=26),
+        xaxis=dict(visible=False, range=[-L - 2.5, L + 2.5], fixedrange=True),
+        yaxis=dict(visible=False, range=[-l - 1.5, l + 1.5], scaleanchor="x", fixedrange=True),
+        # Pas de barre de couleur : l'echelle est relative au joueur (sa case la
+        # plus frequentee = le plus fonce), une graduation chiffree n'aurait pas de sens.
+        annotations=[dict(x=0.5, y=-0.07, xref="paper", yref="paper", showarrow=False,
+                          text="sens de l'attaque  ⟶   ·   plus foncé = plus d'actions",
+                          font=dict(size=11, color=_GRIS))])
+    return fig
+
+
+def repartition_zones(g: np.ndarray) -> pd.DataFrame:
+    """Part des touches par couloir et par tiers Impect (cases rattachees a la
+    zone de leur centre : a 1 m pres sur les limites de couloir)."""
+    nx, ny = g.shape
+    xs = (np.arange(nx) + 0.5) * TERRAIN_L / nx - TERRAIN_L / 2
+    ys = (np.arange(ny) + 0.5) * TERRAIN_l / ny - TERRAIN_l / 2
+    total = g.sum() or 1.0
+    lignes = []
+    for nom, y0, y1 in COULOIRS:
+        dans_y = (ys >= y0) & (ys < y1)
+        ligne = {"Couloir": nom}
+        for tiers, x0, x1 in TIERS:
+            ligne[tiers] = round(100 * g[np.ix_((xs >= x0) & (xs < x1), dans_y)].sum() / total, 1)
+        ligne["Total"] = round(sum(ligne[t] for t, _, _ in TIERS), 1)
+        lignes.append(ligne)
+    return pd.DataFrame(lignes)
+
+
+def section_heatmap(j) -> None:
+    """Bloc « Zones de touches » de la fiche : descriptif, hors score."""
+    if not HEATMAP_FICHIERS:
+        return                       # base publiee sans les cartes : le bloc n'existe pas
+    st.markdown("#### 🗺️ Zones de touches")
+    h = heatmap_joueur(int(j.playerId), int(j.squadId), int(j.iterationId), j.position)
+    if h is None:
+        st.caption("Pas de carte pour cette fiche : championnat hors de la collecte d'événements "
+                   "(championnats de jeunes, saisons d'avant 2025) ou moins de 80 touches à ce poste.")
+        return
+    cle = f"{int(j.playerId)}_{int(j.squadId)}_{int(j.iterationId)}_{j.position}"
+    # Championnat dont les interventions ne sont pas encore telechargees : seule
+    # la carte offensive existe, les deux autres modes ne sont pas proposes.
+    modes = list(HEATMAP_MODES) if h["complet"] else ["Touches offensives"]
+    mode = st.radio("Carte affichée", modes, horizontal=True, key=f"hm_mode_{cle}",
+                    label_visibility="collapsed")
+    g = sum(h[c] for c in HEATMAP_MODES[mode])
+    n = int(g.sum())
+    if n == 0:
+        st.caption("Aucune action de ce type enregistrée à ce poste.")
+        return
+    c1, c2 = st.columns([3, 2])
+    with c1:
+        st.plotly_chart(graphe_heatmap(g), width="stretch", key=f"hm_fig_{cle}_{mode}",
+                        config={"displayModeBar": False})
+    with c2:
+        m1, m2 = st.columns(2)
+        m1.metric("Actions sur la carte", f"{n:,}".replace(",", " "))
+        m2.metric("Matchs", f"{h['n_matchs']}")
+        zones = repartition_zones(g)
+        pct = st.column_config.NumberColumn(format="%.0f %%")
+        st.dataframe(zones, hide_index=True, width="stretch",
+                     column_config={t: pct for t in zones.columns if t != "Couloir"})
+    notes = []
+    if n < 300:
+        notes.append(f"⚠️ **{n} actions seulement** : la carte donne une tendance, pas une zone d'activité "
+                     "établie. Elle est d'autant plus lissée que le joueur a peu de touches.")
+    if h["complet"]:
+        notes.append("**Touches offensives** = passes (à leur point de départ), réceptions et tirs. "
+                     "**Interventions défensives** = interceptions, dégagements, contres, duels au sol, "
+                     "ballons récupérés, arrêts du gardien. Coups de pied arrêtés (touches, corners, "
+                     "coups francs, six mètres) non comptés : ils dessineraient le poteau de corner du "
+                     "tireur, pas son jeu.")
+    else:
+        notes.append("Carte des **passes et réceptions**. Les tirs et les interventions défensives de ce "
+                     "championnat sont en cours de téléchargement : les modes « Toutes les touches » et "
+                     "« Interventions défensives » apparaîtront ici une fois le championnat complet.")
+    notes.append("Chaque action est placée à ses coordonnées réelles (événements Impect, cases de 2,5 m), "
+                 "pour ce poste seulement. Le haut de la carte est le côté gauche du joueur. Le tableau "
+                 "donne la part des actions par couloir et par tiers Impect. Descriptif : hors score.")
+    st.caption("  \n".join(notes))
+
+
 def carte_joueur(j, extra=None) -> None:
     """Fiche complete d'un joueur. j doit porter une colonne archetype_courant.
     extra : fonction affichant un bloc supplementaire sous les boutons (la
@@ -1880,6 +2047,7 @@ def carte_joueur(j, extra=None) -> None:
             f"tous les joueurs à partir de {MINUTES_PROFILS} minutes.", icon="⚠️")
     section_profils(cle, j.minutes)
     section_pression(j)
+    section_heatmap(j)
 
     g1, g2 = st.columns([3, 2])
     with g1:
