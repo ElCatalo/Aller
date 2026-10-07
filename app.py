@@ -458,6 +458,47 @@ def requete(sql: str, params: tuple = ()) -> pd.DataFrame:
     return _requete(sql, params)
 
 
+# ----------------------------------------------------------------- exports
+def en_csv(df: pd.DataFrame) -> bytes:
+    """CSV en UTF-8 AVEC marque d'ordre (BOM). Sans elle, Excel ouvre le fichier
+    en Windows-1252 et les accents sortent en « JeremÃ­as LÃ¡zaro », les smileys
+    de priorite en « ðŸ”´ ». Les autres logiciels ignorent cette marque."""
+    return df.to_csv(index=False).encode("utf-8-sig")
+
+
+try:
+    import openpyxl  # noqa: F401
+    EXCEL_DISPO = True
+except ImportError:          # environnement sans openpyxl : le bouton Excel n'est pas propose
+    EXCEL_DISPO = False
+
+
+def en_excel(df: pd.DataFrame, feuille: str) -> bytes:
+    """Classeur .xlsx d'une seule feuille : en-tete figee, filtre automatique,
+    colonnes a la largeur de leur contenu. Le format est Unicode de bout en bout :
+    accents et smileys passent sans reglage d'encodage."""
+    import io
+    from openpyxl.utils import get_column_letter
+    d = df.copy()
+    for c in d.columns:      # Excel refuse les dates avec fuseau horaire
+        if isinstance(d[c].dtype, pd.DatetimeTZDtype):
+            d[c] = d[c].dt.tz_localize(None)
+    # Nom de feuille : 31 caracteres au plus, sans  [ ] : * ? / \
+    feuille = re.sub(r"[\[\]:*?/\\]", " ", feuille)
+    feuille = re.sub(r" +", " ", feuille).strip()[:31].strip() or "Export"
+    tampon = io.BytesIO()
+    with pd.ExcelWriter(tampon, engine="openpyxl") as xw:
+        d.to_excel(xw, sheet_name=feuille, index=False)
+        ws = xw.sheets[feuille]
+        ws.freeze_panes = "A2"
+        ws.auto_filter.ref = ws.dimensions
+        for i, c in enumerate(d.columns, start=1):
+            contenu_max = d[c].astype(str).str.len().max() if len(d) else 0
+            largeur = max(len(str(c)), int(contenu_max or 0)) + 2
+            ws.column_dimensions[get_column_letter(i)].width = min(max(largeur, 8), 60)
+    return tampon.getvalue()
+
+
 @st.cache_data(ttl=600)
 def listes():
     comp = requete("""SELECT competition, pays, niveau, top5_europe
@@ -904,6 +945,15 @@ def contenu(liste: str) -> pd.DataFrame:
 
 
 PRIORITES = ["", "🔴 Priorité", "🟡 À suivre", "🔵 Vivier"]
+# Export Excel d'une liste : colonne de la liste -> intitule, dans l'ordre du fichier.
+EXPORT_LISTE = {
+    "priorite": "Priorité", "nom": "Nom", "archetype": "Poste", "club": "Club",
+    "competition": "Championnat", "pays": "Pays", "saison": "Saison", "score_actuel": "Score",
+    "performance": "Performance", "qualite": "Qualité actuelle", "progression": "Progression",
+    "age": "Âge", "minutes": "Minutes", "pied_fort": "Pied fort", "taille_cm": "Taille (cm)",
+    "profil_principal": "Profil RCSC", "pilier_fort": "Point fort", "pilier_faible": "Point faible",
+    "rang": "Rang mondial", "note": "Note", "ajoute_le": "Ajouté le",
+}
 
 
 def annoter(liste: str, player_id: int, note: str | None, priorite: str | None) -> None:
@@ -2545,7 +2595,7 @@ def vue_monitoring() -> None:
         if p3.button("500 suivants ▶", disabled=page_m >= n_pages_m - 1, width="stretch", key="mon_suiv"):
             st.session_state["page"] = page_m + 1
             st.rerun()
-    st.download_button("Télécharger la page affichée (CSV)", res_m.to_csv(index=False).encode("utf-8"),
+    st.download_button("Télécharger la page affichée (CSV)", en_csv(res_m),
                        f"monitoring_{archetype}_{periode}j.csv", "text/csv")
     st.divider()
     lignes = event.selection["rows"] if event and "rows" in event.selection else []
@@ -2726,7 +2776,7 @@ with (onglet_mon if MONITORING else
                 st.rerun()
 
         d1, d2, d3 = st.columns([2, 2, 1])
-        d1.download_button("Télécharger la page affichée (CSV)", res.to_csv(index=False).encode("utf-8"),
+        d1.download_button("Télécharger la page affichée (CSV)", en_csv(res),
                            f"scouting_{archetype}.csv", "text/csv", width="stretch")
         clubs = res[["club", "squadId", "iterationId"]].drop_duplicates().sort_values("club")
         club_choisi = d2.selectbox("Voir l'effectif d'un club", ["—"] + clubs["club"].tolist(),
@@ -2952,7 +3002,7 @@ with onglet_rcsc:
                             _j.position, _j.archetype))
                         st.rerun()
                 st.download_button(
-                    "Exporter l'effectif (CSV)", eff.to_csv(index=False).encode("utf-8"),
+                    "Exporter l'effectif (CSV)", en_csv(eff),
                     f"rcsc_{saison_rcsc.replace('/', '-')}.csv", "text/csv", key="dl_rcsc")
 
 # ----------------------------------------------------------------- mes listes
@@ -3169,7 +3219,20 @@ for _ong, nom_liste in zip(_onglets, _onglets_noms + ["exclus"]):
                     j_.position, j_.archetype))
                 st.rerun()
 
-        st.download_button("Exporter la liste (CSV)",
-                           vue.drop(columns=[c for c in ("squadId", "iterationId") if c in vue]).
-                           to_csv(index=False).encode("utf-8"),
-                           f"{nom_liste}.csv", "text/csv", key=f"dl_{nom_liste}")
+        # ---- Export : la liste telle qu'elle est triee et filtree a l'ecran
+        x1, x2, _ = st.columns([1, 1, 2])
+        x1.download_button("Exporter la liste (CSV)",
+                           en_csv(vue.drop(columns=[c for c in ("squadId", "iterationId") if c in vue])),
+                           f"{nom_liste}.csv", "text/csv", key=f"dl_{nom_liste}", width="stretch")
+        if EXCEL_DISPO:
+            # Colonnes du tableau a l'ecran, dans le meme ordre, avec des intitules
+            # lisibles : c'est un document a transmettre, pas un fichier technique.
+            _export = vue[[c for c in EXPORT_LISTE if c in vue]].rename(columns=EXPORT_LISTE) \
+                .rename(columns={"Score": COURT})
+            for _c in ("Point fort", "Point faible"):
+                if _c in _export:
+                    _export[_c] = _export[_c].astype("string").str.replace("_", " ")
+            x2.download_button(
+                "Exporter la liste (Excel)", en_excel(_export, nom_liste), f"{nom_liste}.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key=f"dlx_{nom_liste}", width="stretch")
