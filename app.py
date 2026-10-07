@@ -493,8 +493,11 @@ def en_excel(df: pd.DataFrame, feuille: str) -> bytes:
         ws.freeze_panes = "A2"
         ws.auto_filter.ref = ws.dimensions
         for i, c in enumerate(d.columns, start=1):
-            contenu_max = d[c].astype(str).str.len().max() if len(d) else 0
-            largeur = max(len(str(c)), int(contenu_max or 0)) + 2
+            # Longueur calculee valeur par valeur : sur une colonne entierement
+            # vide, .str.len().max() rend NaN, et int(NaN) fait planter l'export
+            # (cas d'une liste dont aucun joueur n'est plus dans la base).
+            contenu_max = max((len(str(v)) for v in d[c] if pd.notna(v)), default=0)
+            largeur = max(len(str(c)), contenu_max) + 2
             ws.column_dimensions[get_column_letter(i)].width = min(max(largeur, 8), 60)
     return tampon.getvalue()
 
@@ -3232,7 +3235,15 @@ for _ong, nom_liste in zip(_onglets, _onglets_noms + ["exclus"]):
             for _c in ("Point fort", "Point faible"):
                 if _c in _export:
                     _export[_c] = _export[_c].astype("string").str.replace("_", " ")
-            x2.download_button(
-                "Exporter la liste (Excel)", en_excel(_export, nom_liste), f"{nom_liste}.xlsx",
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key=f"dlx_{nom_liste}", width="stretch")
+            # Un export qui echoue ne doit jamais emporter la page : sans ce garde-fou
+            # l'erreur d'une liste empechait d'afficher toutes les listes suivantes.
+            try:
+                _xlsx = en_excel(_export, nom_liste)
+            except Exception as _e:  # noqa: BLE001
+                _xlsx = None
+                x2.caption(f"Export Excel indisponible pour cette liste ({type(_e).__name__}).")
+            if _xlsx is not None:
+                x2.download_button(
+                    "Exporter la liste (Excel)", _xlsx, f"{nom_liste}.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key=f"dlx_{nom_liste}", width="stretch")
