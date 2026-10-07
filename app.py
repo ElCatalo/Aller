@@ -1755,7 +1755,13 @@ def section_pression(j) -> None:
 # de 2,5 m : rien a voir avec les zones des KPI de saison. Deux fichiers parquet
 # a cote de l'app (saisons terminees / saison en cours), lus directement -- ils
 # ne passent pas par la base, qui est deja pres de la limite de taille.
-HEATMAP_FICHIERS = sorted({*_ICI.glob("heatmap_*.parquet"), *(_ICI / "data").glob("heatmap_*.parquet")})
+_CARTES = sorted({*_ICI.glob("heatmap_*.parquet"), *(_ICI / "data").glob("heatmap_*.parquet")})
+# Cartes de saison (une ligne par fiche) et cartes par match, pour le monitoring
+# (une ligne par joueur x match des ~3 derniers mois, un fichier par semaine).
+HEATMAP_FICHIERS = [f for f in _CARTES if not f.name.startswith("heatmap_matchs_")]
+HEATMAP_MATCHS = [f for f in _CARTES if f.name.startswith("heatmap_matchs_")]
+# Sous ce temps de jeu, une carte reflete surtout le deroulement de quelques matchs.
+HEATMAP_MINUTES_PRUDENCE = 400
 TERRAIN_L, TERRAIN_l = 105.0, 68.0
 # mode -> couches additionnees (cf. 09_heatmap.py). off = chaque contact du joueur
 # avec le ballon quand son equipe l'a : passes, receptions, tirs, conduites de
@@ -1801,6 +1807,36 @@ def heatmap_joueur(player_id: int, squad_id: int, iteration_id: int, position: s
     return {"off": grille("off"), "def": grille("def"), "cpa": grille("cpa"),
             "complet": bool(r["complet"]), "n_tirs": entier("n_tirs"),
             "n_conduites": entier("n_conduites"), "n_matchs": entier("n_matchs")}
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def heatmap_periode(player_id: int, squad_id: int, iteration_id: int, position: str,
+                    debut, fin) -> dict | None:
+    """Carte d'un joueur sur une periode du monitoring : somme de ses matchs joues
+    a ce poste entre `debut` (exclu) et `fin` (inclus). None si aucun match."""
+    if not HEATMAP_MATCHS:
+        return None
+    liste = ", ".join("'" + str(f).replace("'", "''") + "'" for f in HEATMAP_MATCHS)
+    try:
+        d = connexion().execute(
+            f"""SELECT * FROM read_parquet([{liste}], union_by_name = true)
+                WHERE playerId = ? AND squadId = ? AND iterationId = ? AND position = ?
+                  AND date > ? AND date <= ?""",
+            (player_id, squad_id, iteration_id, position, debut, fin)).df()
+    except duckdb.Error:
+        return None
+    if d.empty:
+        return None
+    nx, ny = int(d["nx"].iloc[0]), int(d["ny"].iloc[0])
+
+    def grille(nom: str) -> np.ndarray:
+        # Chaque match porte la liste des cases touchees, une par action.
+        cases = np.concatenate([np.frombuffer(bytes(b), dtype="<u2") for b in d[nom]] or [np.array([], dtype="<u2")])
+        return np.bincount(cases, minlength=nx * ny).reshape(nx, ny).astype(float)
+
+    return {"off": grille("off"), "def": grille("def"), "cpa": grille("cpa"), "complet": True,
+            "n_tirs": int(d["n_tirs"].sum()), "n_conduites": int(d["n_conduites"].sum()),
+            "n_matchs": int(d["matchId"].nunique())}
 
 
 def _lisser(g: np.ndarray, sigma: float) -> np.ndarray:
@@ -1883,7 +1919,39 @@ def section_heatmap(j) -> None:
         st.caption("Pas de carte pour cette fiche : championnat hors de la collecte d'événements "
                    "(championnats de jeunes, saisons d'avant 2025) ou moins de 80 actions à ce poste.")
         return
-    cle = f"{int(j.playerId)}_{int(j.squadId)}_{int(j.iterationId)}_{j.position}"
+    _bloc_heatmap(h, f"{int(j.playerId)}_{int(j.squadId)}_{int(j.iterationId)}_{j.position}")
+
+
+def section_heatmap_periode(m) -> None:
+    """Carte de la periode monitoree : memes boutons que la carte de saison, sur
+    les seuls matchs de la periode. Forcement plus approximative -- d'ou l'alerte
+    sous HEATMAP_MINUTES_PRUDENCE minutes."""
+    if not HEATMAP_MATCHS:
+        return
+    debut, fin = bornes_periode()
+    st.markdown("##### 🗺️ Zones d'action sur la période")
+    h = heatmap_periode(int(m.playerId), int(m.squadId), int(m.iterationId), m.position,
+                        debut.to_pydatetime(), fin.to_pydatetime())
+    if h is None:
+        st.caption("Pas de carte sur cette période : les événements de ses matchs ne sont pas encore "
+                   "collectés, ou son championnat est hors de la collecte.")
+        return
+    alertes = []
+    if pd.notna(m.minutes) and m.minutes < HEATMAP_MINUTES_PRUDENCE:
+        alertes.append(f"⚠️ **{m.minutes:.0f} minutes sur la période, moins de {HEATMAP_MINUTES_PRUDENCE}** : "
+                       "carte à prendre avec précaution. Sur si peu de temps de jeu elle reflète surtout le "
+                       "déroulement de quelques matchs (adversaire, score, consigne du jour), pas la zone "
+                       "d'activité habituelle du joueur.")
+    if pd.notna(m.matchs) and h["n_matchs"] < int(m.matchs):
+        alertes.append(f"Carte sur **{h['n_matchs']} des {int(m.matchs)} matchs** de la période : les "
+                       "événements des autres ne sont pas encore collectés.")
+    _bloc_heatmap(h, f"mon_{periode}_{int(m.playerId)}_{int(m.squadId)}_{int(m.iterationId)}_{m.position}",
+                  alertes)
+
+
+def _bloc_heatmap(h: dict, cle: str, alertes: list[str] | None = None) -> None:
+    """Boutons, carte, repartition par zone et notes : commun a la carte de saison
+    et a celle d'une periode du monitoring. alertes : notes placees en tete."""
     # Les trois boutons sont TOUJOURS la, meme quand le championnat n'a encore que
     # ses passes et receptions : un mode absent se lirait comme une fonction qui
     # n'existe pas. Le message dit alors ce qui manque et pourquoi.
@@ -1921,7 +1989,7 @@ def section_heatmap(j) -> None:
         pct = st.column_config.NumberColumn(format="%.0f %%")
         st.dataframe(zones, hide_index=True, width="stretch",
                      column_config={t: pct for t in zones.columns if t != "Couloir"})
-    notes = []
+    notes = list(alertes or [])
     if n < 300:
         notes.append(f"⚠️ **{n} actions seulement** : la carte donne une tendance, pas une zone d'activité "
                      "établie. Elle est d'autant plus lissée que le joueur a peu d'actions.")
@@ -2353,6 +2421,7 @@ def section_monitoring(m, fiche) -> None:
         if m.corrigees and isinstance(m.metriques_corrigees, str) and m.metriques_corrigees:
             st.caption("Métriques ramenées dans la plage de confiance : "
                        + ", ".join(m.metriques_corrigees.split(";")) + ".")
+    section_heatmap_periode(m)
 
 
 def carte_monitoring(m) -> None:
