@@ -1913,13 +1913,17 @@ def section_heatmap(j) -> None:
     """Bloc « Zones d'action » de la fiche : descriptif, hors score."""
     if not HEATMAP_FICHIERS:
         return                       # base publiee sans les cartes : le bloc n'existe pas
-    st.markdown("#### 🗺️ Zones d'action")
+    # La saison est dans le titre : dans une fiche ouverte depuis le Monitoring,
+    # cette carte suit celle de la periode, et la fiche de saison affichee peut
+    # etre celle d'une autre saison ou d'un autre club que la periode monitoree.
+    st.markdown(f"#### 🗺️ Zones d'action · saison {j.saison}")
     h = heatmap_joueur(int(j.playerId), int(j.squadId), int(j.iterationId), j.position)
     if h is None:
         st.caption("Pas de carte pour cette fiche : championnat hors de la collecte d'événements "
                    "(championnats de jeunes, saisons d'avant 2025) ou moins de 80 actions à ce poste.")
         return
-    _bloc_heatmap(h, f"{int(j.playerId)}_{int(j.squadId)}_{int(j.iterationId)}_{j.position}")
+    _bloc_heatmap(h, f"{int(j.playerId)}_{int(j.squadId)}_{int(j.iterationId)}_{j.position}",
+                  libelle=f"Saison {j.saison} entière · {j.club} · {j.competition}")
 
 
 def section_heatmap_periode(m) -> None:
@@ -1929,7 +1933,7 @@ def section_heatmap_periode(m) -> None:
     if not HEATMAP_MATCHS:
         return
     debut, fin = bornes_periode()
-    st.markdown("##### 🗺️ Zones d'action sur la période")
+    st.markdown(f"##### 🗺️ Zones d'action · {periode} derniers jours, du {debut:%d/%m} au {fin:%d/%m/%Y}")
     h = heatmap_periode(int(m.playerId), int(m.squadId), int(m.iterationId), m.position,
                         debut.to_pydatetime(), fin.to_pydatetime())
     if h is None:
@@ -1946,12 +1950,16 @@ def section_heatmap_periode(m) -> None:
         alertes.append(f"Carte sur **{h['n_matchs']} des {int(m.matchs)} matchs** de la période : les "
                        "événements des autres ne sont pas encore collectés.")
     _bloc_heatmap(h, f"mon_{periode}_{int(m.playerId)}_{int(m.squadId)}_{int(m.iterationId)}_{m.position}",
-                  alertes)
+                  alertes,
+                  libelle=f"Période monitorée : {periode} derniers jours, du {debut:%d/%m/%Y} au "
+                          f"{fin:%d/%m/%Y} · {m.club} · {m.competition} ({m.saison})")
 
 
-def _bloc_heatmap(h: dict, cle: str, alertes: list[str] | None = None) -> None:
+def _bloc_heatmap(h: dict, cle: str, alertes: list[str] | None = None, libelle: str = "") -> None:
     """Boutons, carte, repartition par zone et notes : commun a la carte de saison
-    et a celle d'une periode du monitoring. alertes : notes placees en tete."""
+    et a celle d'une periode du monitoring. alertes : notes placees en tete.
+    libelle : ce que la carte couvre (saison ou periode), ecrit juste au-dessus
+    d'elle -- deux cartes se suivent dans une fiche du Monitoring."""
     # Les trois boutons sont TOUJOURS la, meme quand le championnat n'a encore que
     # ses passes et receptions : un mode absent se lirait comme une fonction qui
     # n'existe pas. Le message dit alors ce qui manque et pourquoi.
@@ -1979,6 +1987,8 @@ def _bloc_heatmap(h: dict, cle: str, alertes: list[str] | None = None) -> None:
         return
     c1, c2 = st.columns([3, 2])
     with c1:
+        if libelle:
+            st.markdown(f"**{libelle}**")
         st.plotly_chart(graphe_heatmap(g), width="stretch", key=f"hm_fig_{cle}_{'_'.join(couches)}",
                         config={"displayModeBar": False})
     with c2:
