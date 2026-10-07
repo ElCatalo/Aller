@@ -1757,10 +1757,12 @@ def section_pression(j) -> None:
 # ne passent pas par la base, qui est deja pres de la limite de taille.
 HEATMAP_FICHIERS = sorted({*_ICI.glob("heatmap_*.parquet"), *(_ICI / "data").glob("heatmap_*.parquet")})
 TERRAIN_L, TERRAIN_l = 105.0, 68.0
-# mode -> couches additionnees (cf. 09_heatmap.py : off = passes, receptions,
-# tirs ; def = interceptions, degagements, contres, duels, ballons recuperes, arrets)
-HEATMAP_MODES = {"Toutes les touches": ("off", "def"), "Touches offensives": ("off",),
-                 "Interventions défensives": ("def",)}
+# mode -> couches additionnees (cf. 09_heatmap.py). off = chaque contact du joueur
+# avec le ballon quand son equipe l'a : passes, receptions, tirs, conduites de
+# balle ; def = interceptions, degagements, contres, duels, ballons recuperes,
+# arrets ; cpa = coups de pied arretes qu'il tire, ajoutes sur demande seulement.
+HEATMAP_MODES = {"Toutes les actions": ("off", "def"), "Offensives": ("off",), "Défensives": ("def",)}
+HEATMAP_DEFAUT = "Toutes les actions"
 # Une seule teinte, du papier de la page au sarcelle fonce : c'est une intensite.
 HEATMAP_ECHELLE = [[0.0, "#FBFBF9"], [0.12, "#E3EEEC"], [0.35, "#A3C9C4"], [0.6, "#5A9E98"],
                    [0.8, "#1F6F6B"], [1.0, "#0D3F3C"]]
@@ -1772,7 +1774,7 @@ COULOIRS = [("Aile gauche", 20.2, 34.0), ("Demi-espace gauche", 9.2, 20.2), ("Ax
 
 @st.cache_data(ttl=600, show_spinner=False)
 def heatmap_joueur(player_id: int, squad_id: int, iteration_id: int, position: str) -> dict | None:
-    """Les deux couches (offensive, defensive) d'une fiche, ou None."""
+    """Les couches d'une fiche (offensive, defensive, coups de pied arretes), ou None."""
     if not HEATMAP_FICHIERS:
         return None
     liste = ", ".join("'" + str(f).replace("'", "''") + "'" for f in HEATMAP_FICHIERS)
@@ -1787,9 +1789,18 @@ def heatmap_joueur(player_id: int, squad_id: int, iteration_id: int, position: s
         return None
     r = d.sort_values("n_off", ascending=False).iloc[0]
     nx, ny = int(r["nx"]), int(r["ny"])
-    grille = lambda b: np.frombuffer(bytes(b), dtype="<u2").reshape(nx, ny).astype(float)   # noqa: E731
-    return {"off": grille(r["off"]), "def": grille(r["def"]), "complet": bool(r["complet"]),
-            "n_tirs": int(r["n_tirs"]), "n_matchs": int(r["n_matchs"])}
+
+    def grille(nom: str) -> np.ndarray:
+        # Couche absente d'un fichier ecrit avant son ajout (cpa, 07/10/2026) : vide.
+        b = r.get(nom)
+        if b is None or (not isinstance(b, (bytes, bytearray, memoryview)) and pd.isna(b)):
+            return np.zeros((nx, ny))
+        return np.frombuffer(bytes(b), dtype="<u2").reshape(nx, ny).astype(float)
+
+    entier = lambda nom: int(r[nom]) if nom in r.index and pd.notna(r[nom]) else 0      # noqa: E731
+    return {"off": grille("off"), "def": grille("def"), "cpa": grille("cpa"),
+            "complet": bool(r["complet"]), "n_tirs": entier("n_tirs"),
+            "n_conduites": entier("n_conduites"), "n_matchs": entier("n_matchs")}
 
 
 def _lisser(g: np.ndarray, sigma: float) -> np.ndarray:
@@ -1820,7 +1831,7 @@ def graphe_heatmap(g: np.ndarray) -> go.Figure:
     fig = go.Figure(go.Heatmap(
         z=z.T, x=xs, y=ys, customdata=g.T, zsmooth="best", zmin=0, zmax=1,
         colorscale=HEATMAP_ECHELLE, showscale=False,
-        hovertemplate="%{customdata:.0f} touche(s) dans cette case de 2,5 m<extra></extra>"))
+        hovertemplate="%{customdata:.0f} action(s) dans cette case de 2,5 m<extra></extra>"))
     L, l = TERRAIN_L / 2, TERRAIN_l / 2
     trait = dict(color="#3A3C40", width=1)
     lignes = [dict(type="rect", x0=-L, x1=L, y0=-l, y1=l),
@@ -1863,29 +1874,44 @@ def repartition_zones(g: np.ndarray) -> pd.DataFrame:
 
 
 def section_heatmap(j) -> None:
-    """Bloc « Zones de touches » de la fiche : descriptif, hors score."""
+    """Bloc « Zones d'action » de la fiche : descriptif, hors score."""
     if not HEATMAP_FICHIERS:
         return                       # base publiee sans les cartes : le bloc n'existe pas
-    st.markdown("#### 🗺️ Zones de touches")
+    st.markdown("#### 🗺️ Zones d'action")
     h = heatmap_joueur(int(j.playerId), int(j.squadId), int(j.iterationId), j.position)
     if h is None:
         st.caption("Pas de carte pour cette fiche : championnat hors de la collecte d'événements "
-                   "(championnats de jeunes, saisons d'avant 2025) ou moins de 80 touches à ce poste.")
+                   "(championnats de jeunes, saisons d'avant 2025) ou moins de 80 actions à ce poste.")
         return
     cle = f"{int(j.playerId)}_{int(j.squadId)}_{int(j.iterationId)}_{j.position}"
-    # Championnat dont les interventions ne sont pas encore telechargees : seule
-    # la carte offensive existe, les deux autres modes ne sont pas proposes.
-    modes = list(HEATMAP_MODES) if h["complet"] else ["Touches offensives"]
-    mode = st.radio("Carte affichée", modes, horizontal=True, key=f"hm_mode_{cle}",
-                    label_visibility="collapsed")
-    g = sum(h[c] for c in HEATMAP_MODES[mode])
+    # Les trois boutons sont TOUJOURS la, meme quand le championnat n'a encore que
+    # ses passes et receptions : un mode absent se lirait comme une fonction qui
+    # n'existe pas. Le message dit alors ce qui manque et pourquoi.
+    b1, b2 = st.columns([3, 2])
+    mode = b1.segmented_control("Actions affichées", list(HEATMAP_MODES), default=HEATMAP_DEFAUT,
+                                key=f"hm_mode_{cle}", label_visibility="collapsed") or HEATMAP_DEFAUT
+    arretes = b2.toggle("Avec les coups de pied arrêtés", key=f"hm_cpa_{cle}",
+                        disabled=not h["complet"] or mode == "Défensives",
+                        help="Ajoute les touches, corners, coups francs et six mètres qu'il tire. "
+                             "Décoché par défaut : ils dessinent le poteau de corner et la ligne de "
+                             "touche du tireur plus que son jeu.")
+    partiel = not h["complet"]
+    if partiel:
+        st.info("**Championnat en cours de téléchargement.** Seules ses passes et ses réceptions sont "
+                "disponibles pour l'instant : la carte ci-dessous ne montre qu'elles, quel que soit le "
+                "bouton. Tirs, conduites de balle, coups de pied arrêtés et interventions défensives "
+                "arriveront d'un bloc quand tous les matchs du championnat seront récupérés.", icon="⏳")
+        couches = ("off",)
+    else:
+        couches = HEATMAP_MODES[mode] + (("cpa",) if arretes and mode != "Défensives" else ())
+    g = sum(h[c] for c in couches)
     n = int(g.sum())
     if n == 0:
         st.caption("Aucune action de ce type enregistrée à ce poste.")
         return
     c1, c2 = st.columns([3, 2])
     with c1:
-        st.plotly_chart(graphe_heatmap(g), width="stretch", key=f"hm_fig_{cle}_{mode}",
+        st.plotly_chart(graphe_heatmap(g), width="stretch", key=f"hm_fig_{cle}_{'_'.join(couches)}",
                         config={"displayModeBar": False})
     with c2:
         m1, m2 = st.columns(2)
@@ -1898,17 +1924,16 @@ def section_heatmap(j) -> None:
     notes = []
     if n < 300:
         notes.append(f"⚠️ **{n} actions seulement** : la carte donne une tendance, pas une zone d'activité "
-                     "établie. Elle est d'autant plus lissée que le joueur a peu de touches.")
-    if h["complet"]:
-        notes.append("**Touches offensives** = passes (à leur point de départ), réceptions et tirs. "
-                     "**Interventions défensives** = interceptions, dégagements, contres, duels au sol, "
-                     "ballons récupérés, arrêts du gardien. Coups de pied arrêtés (touches, corners, "
-                     "coups francs, six mètres) non comptés : ils dessineraient le poteau de corner du "
-                     "tireur, pas son jeu.")
+                     "établie. Elle est d'autant plus lissée que le joueur a peu d'actions.")
+    if partiel:
+        notes.append("Affiché : **passes** (à leur point de départ) et **réceptions**.")
     else:
-        notes.append("Carte des **passes et réceptions**. Les tirs et les interventions défensives de ce "
-                     "championnat sont en cours de téléchargement : les modes « Toutes les touches » et "
-                     "« Interventions défensives » apparaîtront ici une fois le championnat complet.")
+        notes.append("**Offensives** = chaque contact avec le ballon quand son équipe l'a : passes (à leur "
+                     "point de départ), réceptions, tirs, et conduites de balle — un point tous les 5 m "
+                     "de course balle au pied, plus l'endroit où il perd le ballon quand la conduite "
+                     f"n'aboutit ni à une passe ni à un tir ({h['n_conduites']} conduites, "
+                     f"{h['n_tirs']} tirs). **Défensives** = interceptions, dégagements, contres, duels "
+                     "au sol, ballons récupérés, arrêts du gardien.")
     notes.append("Chaque action est placée à ses coordonnées réelles (événements Impect, cases de 2,5 m), "
                  "pour ce poste seulement. Le haut de la carte est le côté gauche du joueur. Le tableau "
                  "donne la part des actions par couloir et par tiers Impect. Descriptif : hors score.")
