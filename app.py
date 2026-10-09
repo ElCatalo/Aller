@@ -3307,6 +3307,8 @@ def vue_pression() -> None:
     age_max_p = g1.slider("Âge maximum", 16, 40, 40, key="pr_age")
     min_p = g2.slider("Minutes minimum", 400, 3000, 900, step=100, key="pr_min")
     sans_top5 = g3.checkbox("Sans les 5 grands championnats", key="pr_top5")
+    # La MLS seule, comme dans la barre laterale : MLS Next Pro et les USL restent.
+    sans_mls = g3.checkbox("Exclure la MLS", key="pr_mls")
     ajuste = g4.toggle("Ajusté au contexte de la JPL", value=True, key="pr_ajuste",
                        help="Chaque valeur est ramenée à ce qu'elle vaudrait en JPL, d'après l'effet mesuré "
                             "du niveau et de la pression du championnat. Décoché : valeurs brutes.")
@@ -3317,6 +3319,8 @@ def vue_pression() -> None:
         v = v[v["age"] <= age_max_p]
     if sans_top5:
         v = v[~v["top5_europe"].fillna(False).astype(bool)]
+    if sans_mls:
+        v = v[v["competition"] != "Major League Soccer"]
     if pays_p:
         v = v[v["pays"].isin(pays_p)]
     pref = "aj_" if ajuste else ""
