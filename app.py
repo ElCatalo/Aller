@@ -545,10 +545,13 @@ MON = params_monitoring()
 # ----------------------------------------------------------------- onglets
 # Onglets a execution paresseuse : seul l'onglet ouvert calcule sa page, et la
 # barre laterale s'adapte (periode et minutes sur la periode en Monitoring).
-onglet_saison, onglet_mon, onglet_rcsc = st.tabs(
-    ["Scouting saison", "Monitoring", "Sporting de Charleroi"],
+onglet_saison, onglet_mon, onglet_pression, onglet_rcsc = st.tabs(
+    ["Scouting saison", "Monitoring", "Jeu sous pression", "Sporting de Charleroi"],
     key="onglet", on_change="rerun")
 MONITORING = bool(onglet_mon.open)
+# Onglet « Jeu sous pression » : classements des metriques de l'etude de pression.
+# Comme l'onglet maison, il a ses propres filtres et n'utilise pas le classement.
+VUE_PRESSION = bool(onglet_pression.open)
 # Onglet maison : effectif du RSC Charleroi et equipe type. Il n'utilise aucun
 # des filtres de la barre laterale (poste, championnat, minutes...), on evite
 # donc la grosse requete de classement quand il est ouvert.
@@ -1158,7 +1161,7 @@ def page_courante(filtre: str) -> int:
     return st.session_state.get("page", 0)
 
 
-if not MONITORING and not VUE_RCSC:
+if not MONITORING and not VUE_RCSC and not VUE_PRESSION:
     # Profil RCSC : meme joueur-saison, meme pool. Plus de verdict : filtre sur
     # le score de correspondance lui-meme (cf. profils_rcsc.py).
     _SOUS_PROFIL = """FROM fait_profil p WHERE p.playerId = v_joueurs.playerId AND p.squadId = v_joueurs.squadId
@@ -2830,7 +2833,8 @@ fiche_param = st.query_params.get("fiche")
 # Chaque vue s'affiche dans l'onglet ouvert. Une fiche ou un effectif ouvert
 # depuis le Monitoring y reste : le bouton retour ramene au classement.
 with (onglet_mon if MONITORING else
-      onglet_rcsc if VUE_RCSC else onglet_saison):
+      onglet_rcsc if VUE_RCSC else
+      onglet_pression if VUE_PRESSION else onglet_saison):
     # Rappel visible sur chaque vue : un Score lu avec des poids modifies ne doit
     # jamais pouvoir etre pris pour le Score d'origine.
     if POIDS_MODIFIES:
@@ -2900,7 +2904,7 @@ with (onglet_mon if MONITORING else
     elif MONITORING:
         vue_monitoring()
 
-    elif VUE_RCSC:
+    elif VUE_RCSC or VUE_PRESSION:
         # L'onglet maison se dessine dans son propre bloc plus bas : ici on ne
         # fait rien, surtout pas le classement (ses donnees ne sont meme pas
         # calculees quand cet onglet est ouvert).
@@ -3098,6 +3102,344 @@ def _carte_poste(col, titre: str, joueur, saison_choisie: str) -> None:
                 int(joueur.playerId), int(joueur.squadId), int(joueur.iterationId),
                 joueur.position, joueur.archetype))
             st.rerun()
+
+
+# ============================================================ jeu sous pression
+# Onglet « Jeu sous pression » (09/10/2026, Alex) : qui sont les meilleurs sous
+# pression, metrique par metrique, en tenant compte du NIVEAU et de la PRESSION
+# du championnat -- puis un score d'ensemble.
+#
+# AJUSTEMENT AU CONTEXTE. Une reussite de +3 sous pression en D2 ne vaut pas +3
+# en Premier League. L'ecart est MESURE, pas suppose : sur les joueurs presents
+# dans les deux jeux de saisons de l'etude (saison terminee -> saison en cours,
+# meme poste), on regresse la variation de chaque metrique sur la variation du
+# rating du championnat et de la pression qu'on y subit a ce poste. Mesure du
+# 09/10/2026, paires a 800 minutes et plus dans la saison en cours (~4 200) :
+#     reussite sous pression vs attendu   -5,4 par point de rating (t -5,9)
+#     reussite vs attendu (toutes passes) -2,9 par point de rating (t -6,1),
+#                                         -0,23 par point de pression (t -5,1)
+#     entrees dans la surface / 90        -0,54 par point de rating (t -10,3)
+#     passes progressives sous pression/90  -0,39 (t -4,4) ; +0,05 par point de
+#                                         pression (t +5,6)
+#     maintien de l'ambition              +0,26 par point de rating (t +3,3)
+#     part de passes progressives sous pression, adversaires elimines vs
+#     attendu : pas d'effet net -- non ajustes
+# Les coefficients sont recalcules a chaque chargement de la base, et un
+# coefficient n'est applique que s'il est net (|t| >= PRESSION_T_MIN). Chaque
+# valeur est ensuite ramenee a ce qu'elle vaudrait en JPL (niveau et pression de
+# la JPL au meme poste) : c'est la meme logique que la lecture Qualite actuelle.
+#
+# SCORE DE PRESSION. Trois axes, en percentiles du poste (apres ajustement) :
+#   Resister  ne pas perdre le ballon quand on est presse          40 %
+#   Oser      continuer a jouer vers l'avant quand on est presse    30 %
+#   Peser     ce que ses passes produisent                          30 %
+# Les poids suivent la demande (la reussite sous pression d'abord) et la fidelite
+# mesuree de chaque metrique : le volume par 90, fidele a 0,26 seulement, ne
+# pese que 5 %. Le score est ramene vers 50 sous PRESSION_MINUTES_PLEINES.
+PRESSION_POSTES = {"CB": "Défenseurs centraux", "FB": "Latéraux", "DMCM": "Milieux défensifs et centraux",
+                   "AM": "Milieux offensifs", "WG": "Ailiers", "CF": "Avant-centres", "GK": "Gardiens"}
+# metrique -> (intitule, axe, poids dans le score, format, lecture)
+PRESSION_METRIQUES = {
+    "reussite_fp_vs_attendu_100": (
+        "Réussite sous pression vs attendu", "Résister", 0.30, "%+.1f",
+        "Passes réussies au-dessus de l'attendu, pour 100 passes sous forte pression, à poste, zone "
+        "et distance comparables."),
+    "reussite_vs_attendu_100": (
+        "Réussite vs attendu (toutes passes)", "Résister", 0.10, "%+.1f",
+        "La même mesure sur toutes ses passes, pressé ou non."),
+    "part_prog_fp": (
+        "Passes progressives sous pression (%)", "Oser", 0.20, "%.0f",
+        "Part de ses passes sous forte pression qui gagnent du terrain vers le but."),
+    "maintien_ambition": (
+        "Maintien de l'ambition", "Oser", 0.10, "%.2f",
+        "Cette part rapportée à la même part sans pression : 1,00 = il joue pareil pressé ou libre."),
+    "bypassed_vs_attendu_p90": (
+        "Adversaires éliminés vs attendu / 90", "Peser", 0.20, "%+.1f",
+        "Adversaires supprimés par ses passes, au-dessus de l'attendu."),
+    "entrees_surface_p90": (
+        "Entrées dans la surface / 90", "Peser", 0.05, "%.2f",
+        "Passes réussies qui font entrer le ballon dans la surface adverse."),
+    "prog_fp_p90": (
+        "Passes progressives sous pression / 90", "Peser", 0.05, "%.1f",
+        "Volume brut, très dépendant du volume de jeu de l'équipe."),
+}
+PRESSION_AXES = ["Résister", "Oser", "Peser"]
+PRESSION_T_MIN = 2.5                 # un coefficient d'ajustement n'est applique que s'il est net
+PRESSION_CALIB_MINUTES = 800         # minutes de la saison en cours pour entrer dans la calibration
+PRESSION_MINUTES_PLEINES = 900
+PRESSION_REFERENCE = "Jupiler Pro League"
+
+
+def _centile_ref(valeurs: np.ndarray, ref: np.ndarray) -> np.ndarray:
+    """Percentile de chaque valeur dans la population `ref` (masque), comme
+    profils_rcsc._rang : les joueurs de reference sont classes entre eux, les
+    autres sont situes parmi eux sans y entrer."""
+    out = np.full(len(valeurs), np.nan)
+    base = np.sort(valeurs[ref & ~np.isnan(valeurs)])
+    if not len(base):
+        return out
+    ok = ~np.isnan(valeurs)
+    g, d = np.searchsorted(base, valeurs[ok], "left"), np.searchsorted(base, valeurs[ok], "right")
+    out[ok] = np.where(d > g, (g + d + 1) / 2, g) / len(base) * 100
+    return np.clip(out, 0, 100)
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def calibration_pression() -> pd.DataFrame:
+    """Effet mesure d'un changement de championnat sur chaque metrique : une
+    ligne par metrique, coefficients par point de rating et par point de pression
+    du championnat, avec leur t. Paires = meme joueur, meme poste, jeu de saisons
+    'passe' puis 'cours'."""
+    p = requete("""SELECT p.playerId, p.pos, p.jeu_saisons, s.rating_moyen_championnat AS rating,
+               l.pression_passe AS ligue_pp, p.* EXCLUDE (playerId, pos, jeu_saisons)
+        FROM fait_pression p JOIN dim_saison s USING (iterationId)
+        LEFT JOIN dim_pression_championnat l ON l.iterationId = p.iterationId AND l.pos = p.pos""")
+    a = p[p["jeu_saisons"] == "passe"].drop_duplicates(["playerId", "pos"])
+    b = p[p["jeu_saisons"] == "cours"].drop_duplicates(["playerId", "pos"])
+    x = a.merge(b, on=["playerId", "pos"], suffixes=("_a", "_b"))
+    # Seulement les paires ou la saison en cours a assez de minutes. Les mesures
+    # sont retrecies vers zero quand le joueur a peu joue : avec toutes les
+    # paires, la variation est ecrasee et l'effet du niveau sous-estime (reussite
+    # sous pression : -3,0 par point de rating sur toutes les paires, -5,4 sur
+    # celles a 800 minutes et plus).
+    x = x[pd.to_numeric(x["minutes_b"], errors="coerce") >= PRESSION_CALIB_MINUTES]
+    lignes = []
+    for m in PRESSION_METRIQUES:
+        y = pd.to_numeric(x[f"{m}_b"], errors="coerce") - pd.to_numeric(x[f"{m}_a"], errors="coerce")
+        dr, dp = x["rating_b"] - x["rating_a"], x["ligue_pp_b"] - x["ligue_pp_a"]
+        ok = (y.notna() & dr.notna() & dp.notna()).to_numpy()
+        ligne = {"metrique": m, "paires": int(ok.sum()), "coef_rating": 0.0, "t_rating": np.nan,
+                 "coef_pression": 0.0, "t_pression": np.nan}
+        if ok.sum() >= 500:
+            X = np.column_stack([np.ones(ok.sum()), dr[ok].to_numpy(float), dp[ok].to_numpy(float)])
+            beta, *_ = np.linalg.lstsq(X, y[ok].to_numpy(float), rcond=None)
+            residus = y[ok].to_numpy(float) - X @ beta
+            se = np.sqrt(np.diag(residus.var(ddof=3) * np.linalg.inv(X.T @ X)))
+            ligne.update(coef_rating=float(beta[1]), t_rating=float(beta[1] / se[1]),
+                         coef_pression=float(beta[2]), t_pression=float(beta[2] / se[2]))
+        # Un coefficient flou vaut zero : on n'ajuste pas sur du bruit.
+        ligne["applique_rating"] = ligne["coef_rating"] if abs(ligne["t_rating"]) >= PRESSION_T_MIN else 0.0
+        ligne["applique_pression"] = ligne["coef_pression"] if abs(ligne["t_pression"]) >= PRESSION_T_MIN else 0.0
+        lignes.append(ligne)
+    return pd.DataFrame(lignes)
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def donnees_pression() -> pd.DataFrame:
+    """Une ligne par joueur x club x saison x poste ayant des mesures de pression :
+    valeurs brutes, valeurs ramenees au contexte de la JPL (aj_*), percentiles du
+    poste (pc_*), les trois axes et le score."""
+    metriques = ", ".join(f"any_value(p.{m}) AS {m}" for m in PRESSION_METRIQUES)
+    d = requete(f"""SELECT v.playerId, v.squadId, v.iterationId, v.position, min(v.archetype) AS archetype,
+               any_value(v.nom) AS nom, any_value(v.club) AS club, any_value(v.competition) AS competition,
+               any_value(v.pays) AS pays, any_value(v.top5_europe) AS top5_europe, any_value(v.saison) AS saison,
+               any_value(round(v.age_years, 1)) AS age, any_value(v.minutes_jouees) AS minutes,
+               any_value(s.rating_moyen_championnat) AS rating, any_value(p.pos) AS pos,
+               any_value(p.jeu_saisons) AS jeu, any_value(p.pression_passe) AS pression_subie,
+               any_value(p.pct_passes_forte_pression) AS part_forte_pression,
+               any_value(l.pression_passe) AS ligue_pp, {metriques}
+        FROM v_joueurs v
+        JOIN dim_poste_pression m USING (position)
+        JOIN fait_pression p ON p.playerId = v.playerId AND p.iterationId = v.iterationId AND p.pos = m.pos
+        JOIN dim_saison s ON s.iterationId = v.iterationId
+        LEFT JOIN dim_pression_championnat l ON l.iterationId = p.iterationId AND l.pos = p.pos
+        GROUP BY v.playerId, v.squadId, v.iterationId, v.position""")
+    # Deux clubs dans la meme saison : la mesure de pression est par joueur x saison
+    # x poste, on la rattache au club ou il a le plus joue.
+    d = (d.sort_values("minutes", ascending=False).drop_duplicates(["playerId", "iterationId", "pos"])
+          .reset_index(drop=True))
+    cal = calibration_pression().set_index("metrique")
+    # Contexte de reference : la JPL du meme jeu de saisons, au meme poste.
+    jpl = d[d["competition"] == PRESSION_REFERENCE]
+    rating_ref = jpl.groupby("jeu")["rating"].mean()
+    pp_ref = jpl.groupby(["jeu", "pos"])["ligue_pp"].mean()
+    d_rating = (d["rating"] - d["jeu"].map(rating_ref).fillna(d["rating"].mean())).fillna(0.0)
+    ref_pp = pd.Series(list(zip(d["jeu"], d["pos"])), index=d.index).map(pp_ref)
+    d_pp = (d["ligue_pp"] - ref_pp).fillna(0.0)
+    fiable = (d["minutes"] >= PRESSION_MINUTES_PLEINES).to_numpy()
+    groupes = d.groupby(["jeu", "pos"]).indices
+    for m in PRESSION_METRIQUES:
+        v = pd.to_numeric(d[m], errors="coerce")
+        # valeur en JPL = valeur ici - effet du contexte d'ici par rapport a la JPL
+        d[f"aj_{m}"] = v - cal.loc[m, "applique_rating"] * d_rating - cal.loc[m, "applique_pression"] * d_pp
+        pc = np.full(len(d), np.nan)
+        for _, lignes in groupes.items():
+            pc[lignes] = _centile_ref(d[f"aj_{m}"].to_numpy(dtype=float)[lignes], fiable[lignes])
+        d[f"pc_{m}"] = pc
+    poids_tot, somme = np.zeros(len(d)), np.zeros(len(d))
+    for axe in PRESSION_AXES:
+        ms = [m for m, x in PRESSION_METRIQUES.items() if x[1] == axe]
+        w = np.array([PRESSION_METRIQUES[m][2] for m in ms])
+        vals = d[[f"pc_{m}" for m in ms]].to_numpy(dtype=float)
+        ok = ~np.isnan(vals)
+        den = (ok * w).sum(axis=1)
+        d[f"axe_{axe}"] = np.where(den > 0, np.where(ok, vals, 0.0).dot(w) / np.where(den > 0, den, 1), np.nan)
+        somme += np.where(ok, vals, 0.0).dot(w)
+        poids_tot += den
+    brut = np.where(poids_tot > 0, somme / np.where(poids_tot > 0, poids_tot, 1), np.nan)
+    # Sans la reussite sous pression, pas de score : c'est la mesure centrale. Et il
+    # faut au moins 60 % du poids mesure (gardiens : la partie progression manque).
+    brut = np.where(d["pc_reussite_fp_vs_attendu_100"].isna() | (poids_tot < 0.6), np.nan, brut)
+    volume = (d["minutes"].fillna(0) / PRESSION_MINUTES_PLEINES).clip(0, 1).to_numpy(dtype=float)
+    d["score_brut"] = brut
+    d["fiabilite"] = np.round(100 * volume, 0)
+    d["score_pression"] = np.round(50 + (brut - 50) * (0.5 + 0.5 * volume), 1)
+    d["couverture"] = np.round(100 * poids_tot, 0)
+    return d
+
+
+def vue_pression() -> None:
+    st.markdown("#### Étude de pression")
+    st.title("Jeu sous pression")
+    rayures(fine=True)
+    if not pression_dispo():
+        st.warning("La base ne contient pas l'étude de pression.")
+        return
+    d = donnees_pression()
+    f1, f2, f3 = st.columns([2, 2, 3])
+    pos = f1.selectbox("Poste", list(PRESSION_POSTES), format_func=PRESSION_POSTES.get, key="pr_poste")
+    jeu = f2.radio("Saisons", ["cours", "passe"], horizontal=True, key="pr_jeu",
+                   format_func={"cours": "Saison en cours", "passe": "Saisons terminées"}.get)
+    CLASSER = {"score_pression": "Score de pression",
+               **{m: x[0] for m, x in PRESSION_METRIQUES.items()}}
+    tri = f3.selectbox("Classer par", list(CLASSER), format_func=CLASSER.get, key="pr_tri")
+    g1, g2, g3, g4 = st.columns([2, 2, 2, 2])
+    age_max_p = g1.slider("Âge maximum", 16, 40, 40, key="pr_age")
+    min_p = g2.slider("Minutes minimum", 400, 3000, 900, step=100, key="pr_min")
+    sans_top5 = g3.checkbox("Sans les 5 grands championnats", key="pr_top5")
+    ajuste = g4.toggle("Ajusté au contexte de la JPL", value=True, key="pr_ajuste",
+                       help="Chaque valeur est ramenée à ce qu'elle vaudrait en JPL, d'après l'effet mesuré "
+                            "du niveau et de la pression du championnat. Décoché : valeurs brutes.")
+    pays_p = st.multiselect("Pays", sorted(d["pays"].dropna().unique()), key="pr_pays",
+                            placeholder="Tous les pays")
+    v = d[(d["pos"] == pos) & (d["jeu"] == jeu) & (d["minutes"] >= min_p)]
+    if age_max_p < 40:
+        v = v[v["age"] <= age_max_p]
+    if sans_top5:
+        v = v[~v["top5_europe"].fillna(False).astype(bool)]
+    if pays_p:
+        v = v[v["pays"].isin(pays_p)]
+    pref = "aj_" if ajuste else ""
+    col_tri = tri if tri == "score_pression" else f"{pref}{tri}"
+    v = v.dropna(subset=[col_tri]).sort_values(col_tri, ascending=False).reset_index(drop=True)
+    if v.empty:
+        st.warning("Aucun joueur ne correspond à ces filtres.")
+        return
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Joueurs", f"{len(v):,}".replace(",", " "))
+    c2.metric("Score de pression médian", n_(v["score_pression"].median()))
+    c3.metric("Championnats", v["competition"].nunique())
+    c4.metric("Âge médian", n_(v["age"].median()))
+    vue = v.head(PAR_PAGE).copy()
+    vue.insert(0, "rang", np.arange(1, len(vue) + 1))
+    vue["prudence"] = np.where(vue["minutes"] < PRESSION_MINUTES_PLEINES, "⚠", "")
+    st.caption(f"Joueurs **1 à {len(vue)}** sur {len(v)}, classés par **{CLASSER[tri].lower()}**"
+               + (" (valeur ramenée au contexte de la JPL)" if ajuste and tri != "score_pression" else "")
+               + ". 👉 Clique sur une ligne pour ouvrir la fiche du joueur.")
+    cols_m = [f"{pref}{m}" for m in PRESSION_METRIQUES]
+    ev = st.dataframe(
+        vue, hide_index=True, width="stretch", height=430, key=f"pr_tbl_{pos}_{jeu}_{tri}_{ajuste}",
+        on_select="rerun", selection_mode="single-row",
+        column_order=["rang", "nom", "club", "competition", "saison", "age", "minutes", "prudence",
+                      "score_pression"] + [f"axe_{a}" for a in PRESSION_AXES] + cols_m
+                     + ["pression_subie", "part_forte_pression"],
+        column_config={
+            "rang": st.column_config.NumberColumn("Rang", format="%d"),
+            "minutes": st.column_config.NumberColumn("Min", format="%d"),
+            "prudence": st.column_config.TextColumn(
+                "⚠", width="small", help=f"Moins de {PRESSION_MINUTES_PLEINES} minutes : mesures moins fiables, "
+                                         "score ramené vers 50."),
+            "score_pression": st.column_config.ProgressColumn(
+                "Score de pression", min_value=0, max_value=100, format="%.1f",
+                help="Résister 40 % · Oser 30 % · Peser 30 %, en percentiles du poste après ajustement "
+                     "au contexte de la JPL. 50 = joueur médian du poste."),
+            **{f"axe_{a}": st.column_config.NumberColumn(a, format="%.0f",
+                                                         help=f"Percentile du poste sur l'axe « {a} ».")
+               for a in PRESSION_AXES},
+            **{f"{pref}{m}": st.column_config.NumberColumn(x[0], format=x[3], help=x[4])
+               for m, x in PRESSION_METRIQUES.items()},
+            "pression_subie": st.column_config.NumberColumn(
+                "Pression subie", format="%.1f",
+                help="Pression adverse moyenne (0-100) quand il donne le ballon. Contexte, hors score : "
+                     "elle décrit son rôle et sa zone."),
+            "part_forte_pression": st.column_config.NumberColumn(
+                "% passes pressées", format="%.0f", help="Part de ses passes faites sous forte pression."),
+        })
+    choix = ev.selection["rows"] if ev and "rows" in ev.selection else []
+    if choix:
+        c = vue.iloc[choix[0]]
+        if st.button(f"Ouvrir la fiche de {c.nom} ({c.saison}, {c.club})", key="pr_ouvrir", type="primary"):
+            st.session_state["_archetype_a_appliquer"] = c.archetype
+            ouvrir_fiche(int(c.playerId), int(c.squadId), int(c.iterationId), c.position, c.archetype)
+    st.download_button("Télécharger le classement affiché (CSV)",
+                       en_csv(vue[[c for c in vue.columns if not c.startswith("pc_")]]),
+                       f"pression_{pos}_{jeu}.csv", "text/csv")
+
+    # ---- Les meilleurs, metrique par metrique
+    st.markdown("##### Les meilleurs sur chaque métrique")
+    st.caption("Mêmes filtres que le classement. Cinq premiers par métrique"
+               + (", valeurs ramenées au contexte de la JPL." if ajuste else ", valeurs brutes."))
+    liste = list(PRESSION_METRIQUES.items())
+    for debut in range(0, len(liste), 3):
+        for col, (m, x) in zip(st.columns(3), liste[debut:debut + 3]):
+            top = v.dropna(subset=[f"{pref}{m}"]).nlargest(5, f"{pref}{m}")
+            with col.container(border=True):
+                st.markdown(f"**{x[0]}**  \n:gray[axe {x[1]} · {x[2] * 100:.0f} % du score]")
+                st.dataframe(top[["nom", "club", f"{pref}{m}"]], hide_index=True, width="stretch",
+                             column_config={f"{pref}{m}": st.column_config.NumberColumn("Valeur", format=x[3]),
+                                            "nom": st.column_config.TextColumn("Joueur"),
+                                            "club": st.column_config.TextColumn("Club")})
+
+    # ---- Methode
+    with st.expander("Comment ces chiffres sont construits"):
+        cal = calibration_pression()
+        fia = pression_fiabilite()
+        st.markdown(
+            "**1. Les mesures** viennent de l'étude de pression : chaque passe est comparée à l'attendu de "
+            "sa situation (poste, niveau de pression, zone, distance). Elles sont calculées par poste.\n\n"
+            "**2. L'ajustement au contexte.** Sur les joueurs présents dans deux saisons de l'étude au même "
+            "poste, on mesure de combien chaque métrique bouge quand le championnat change de niveau "
+            "(rating Impect) et de pression. Un coefficient n'est appliqué que s'il est net "
+            f"(|t| ≥ {PRESSION_T_MIN}) ; sinon la métrique n'est pas ajustée. Chaque valeur est ensuite "
+            f"ramenée à ce qu'elle vaudrait en {PRESSION_REFERENCE}, au même poste.")
+        _effet = float(cal.set_index("metrique").loc["reussite_fp_vs_attendu_100", "coef_rating"])
+        t = cal.assign(metrique=cal["metrique"].map(lambda m: PRESSION_METRIQUES[m][0]),
+                       fidelite=cal["metrique"].map(fia))
+        st.dataframe(
+            t[["metrique", "paires", "coef_rating", "t_rating", "applique_rating", "coef_pression",
+               "t_pression", "applique_pression", "fidelite"]], hide_index=True, width="stretch",
+            column_config={
+                "metrique": st.column_config.TextColumn("Métrique"),
+                "paires": st.column_config.NumberColumn("Paires", format="%d"),
+                "coef_rating": st.column_config.NumberColumn("Effet par point de rating", format="%+.2f"),
+                "t_rating": st.column_config.NumberColumn("t", format="%+.1f"),
+                "applique_rating": st.column_config.NumberColumn("Appliqué", format="%+.2f"),
+                "coef_pression": st.column_config.NumberColumn("Effet par point de pression", format="%+.3f"),
+                "t_pression": st.column_config.NumberColumn("t", format="%+.1f"),
+                "applique_pression": st.column_config.NumberColumn("Appliqué", format="%+.3f"),
+                "fidelite": st.column_config.NumberColumn(
+                    "Fidélité", format="%.2f", help="Matchs pairs vs impairs. Au-dessus de 0,60 la mesure "
+                                                    "décrit le joueur.")})
+        st.markdown(
+            f"Lecture : un effet de {_effet:+.1f} par point de rating veut dire que la réussite sous "
+            f"pression d'un joueur bouge de {_effet:+.1f} quand il monte d'un point de rating (de la D2 "
+            f"belge à la JPL : +0,26 de rating, soit {_effet * 0.26:+.1f}). "
+            "Un joueur d'un championnat plus fort que la JPL est donc relevé, un joueur d'un championnat "
+            "plus faible abaissé.\n\n"
+            "**3. Le score de pression** : percentile du poste sur chaque métrique ajustée, puis "
+            "**Résister 40 %** (réussite sous pression 30, réussite toutes passes 10), **Oser 30 %** "
+            "(part de passes progressives sous pression 20, maintien de l'ambition 10), **Peser 30 %** "
+            "(adversaires éliminés vs attendu 20, entrées dans la surface 5, volume par 90 : 5). Les "
+            f"percentiles sont pris parmi les joueurs à {PRESSION_MINUTES_PLEINES} minutes et plus ; sous ce "
+            "volume le score est ramené vers 50 et la ligne porte un ⚠.\n\n"
+            "**À garder en tête** : ces mesures décrivent un style et une solidité sous pression. L'étude a "
+            "montré qu'elles prédisent très peu la performance de la saison suivante une fois le score "
+            "connu : ce classement complète le Score, il ne le remplace pas.")
+
+
+with onglet_pression:
+    if VUE_PRESSION and not fiche_param and not club_param:
+        vue_pression()
 
 
 with onglet_rcsc:
