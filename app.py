@@ -2071,6 +2071,216 @@ def _bloc_heatmap(h: dict, cle: str, alertes: list[str] | None = None, libelle: 
     st.caption("  \n".join(notes))
 
 
+# ======================================================== profils similaires
+# « Trouver des profils similaires » (09/10/2026, Alex) : les joueurs du meme
+# poste qui ressemblent le plus a celui de la fiche. Six blocs de comparaison,
+# chacun mesure par une distance, puis ponderes :
+#   piliers         percentiles des piliers du poste, ponderes par leur poids
+#                   dans le score -- ce que le joueur fait sur le terrain
+#   profils         correspondances aux profils RCSC du poste -- son style
+#   niveau          Score sans l'age : meme niveau, quel que soit l'age
+#   championnat     rating moyen du championnat ou il joue
+#   pression        son jeu sous pression (etude de pression), en percentiles
+#   pression_ligue  pression subie a ce poste dans son championnat
+# Les deux blocs de pression pesent peu, a dessein : l'etude a montre qu'ils
+# decrivent un style sans presque rien predire.
+#
+# Chaque distance est rapportee a la distance mediane entre deux joueurs du
+# poste pris AU HASARD (mesuree sur la base, par poste). D'ou une echelle
+# lisible : similarite = 100 x 0,5^distance -- 100 = identique, 50 = aussi
+# proches que deux joueurs quelconques du poste, sous 50 = plus eloignes.
+SIM_POIDS = {"piliers": 0.45, "profils": 0.18, "niveau": 0.15, "championnat": 0.10,
+             "pression": 0.07, "pression_ligue": 0.05}
+SIM_LIBELLES = {"piliers": "Piliers", "profils": "Profils RCSC", "niveau": "Niveau",
+                "championnat": "Championnat", "pression": "Sous pression",
+                "pression_ligue": "Pression du championnat"}
+# Fiabilite d'une comparaison : pleine a partir de ce volume de jeu pour les DEUX
+# joueurs. En dessous, la similarite est ramenee vers 50 (le niveau du hasard) :
+# sur peu de matchs, deux joueurs se ressemblent ou different surtout par bruit.
+SIM_MINUTES_PLEINES, SIM_MATCHS_PLEINS = 900, 10
+SIM_CLE = ["playerId", "squadId", "iterationId", "position"]
+SIM_PRESSION = ["pct_part_prog_fp", "pct_reussite_fp_vs_attendu_100", "pct_bypassed_vs_attendu_p90",
+                "pct_pression_passe", "ambition"]
+
+
+def _sim_distances(d: dict, i: int) -> dict[str, np.ndarray]:
+    """Distance de chaque joueur du poste au joueur d'indice i, bloc par bloc
+    (NaN quand le bloc n'est pas mesure pour l'un des deux)."""
+    def rms(m: np.ndarray, w: np.ndarray | None = None) -> np.ndarray:
+        e = (m - m[i]) ** 2
+        w = np.ones(m.shape[1]) if w is None else w
+        ok = ~np.isnan(e)
+        den = (ok * w).sum(axis=1)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            return np.sqrt(np.where(ok, e, 0.0).dot(w) / np.where(den > 0, den, np.nan))
+    return {"piliers": rms(d["piliers"], d["poids_piliers"]), "profils": rms(d["profils"]),
+            "niveau": np.abs(d["niveau"] - d["niveau"][i]), "championnat": np.abs(d["ligue"] - d["ligue"][i]),
+            "pression": rms(d["pression"]), "pression_ligue": rms(d["pression_ligue"])}
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def donnees_similarite(arch: str, poids: tuple = POIDS_DEFAUT) -> dict:
+    """Tout ce qu'il faut pour comparer les joueurs d'un poste, en tableaux
+    alignes sur la meme liste de joueurs. poids : cle de cache seulement (le
+    Score sans l'age depend des poids regles dans la barre laterale)."""
+    avec_pression = pression_dispo()
+    champs_p = (""", v.pct_part_prog_fp, v.pct_reussite_fp_vs_attendu_100, v.pct_bypassed_vs_attendu_p90,
+               v.pct_pression_passe, v.maintien_ambition""" if avec_pression else "")
+    j = requete(f"""SELECT v.playerId, v.squadId, v.iterationId, v.position, v.nom, v.club, v.competition,
+               v.saison, v.pays, v.top5_europe, round(v.age_years, 1) AS age, v.minutes_jouees AS minutes,
+               v.n_matches_oppw AS matchs, v.score - v.ajust_age AS niveau,
+               v.competition_avg_rating AS ligue, v.profil_principal{champs_p}
+        FROM v_joueurs v WHERE v.archetype = ?""", (arch,)).drop_duplicates(SIM_CLE).reset_index(drop=True)
+    idx = pd.MultiIndex.from_frame(j[SIM_CLE])
+    pil = requete("""SELECT playerId, squadId, iterationId, position, pilier, percentile, poids
+        FROM fait_pilier WHERE archetype = ?""", (arch,))
+    P = pil.pivot_table(index=SIM_CLE, columns="pilier", values="percentile").reindex(idx)
+    w = pil.groupby("pilier")["poids"].first().reindex(P.columns).fillna(0).to_numpy(dtype=float)
+    try:
+        pro = requete("""SELECT playerId, squadId, iterationId, position, profil_id, correspondance
+            FROM fait_profil WHERE archetype = ?""", (arch,))
+        R = pro.pivot_table(index=SIM_CLE, columns="profil_id", values="correspondance").reindex(idx)
+    except duckdb.Error:
+        R = pd.DataFrame(index=idx)
+    X = np.full((len(j), len(SIM_PRESSION)), np.nan)
+    L = np.full((len(j), 2), np.nan)
+    if avec_pression:
+        x = j[SIM_PRESSION[:-1]].apply(pd.to_numeric, errors="coerce")
+        x = x.where(x >= 0)                                    # -1 = percentile non mesure
+        # Maintien de l'ambition : un rapport (mediane ~0,7), mis sur 0-100 comme les percentiles.
+        x["ambition"] = (pd.to_numeric(j["maintien_ambition"], errors="coerce") * 70).clip(0, 100)
+        X = x.to_numpy(dtype=float)
+        try:
+            lig = requete("""SELECT c.iterationId, m.position, avg(c.pression_passe) AS lp,
+                       avg(c.pression_reception) AS lr
+                FROM dim_pression_championnat c JOIN dim_poste_pression m USING (pos) GROUP BY ALL""")
+            L = j[["iterationId", "position"]].merge(lig, on=["iterationId", "position"], how="left")[["lp", "lr"]] \
+                .to_numpy(dtype=float)
+        except duckdb.Error:
+            pass
+    d = {"joueurs": j, "piliers": P.to_numpy(dtype=float), "poids_piliers": w,
+         "profils": R.to_numpy(dtype=float) if R.shape[1] else np.full((len(j), 1), np.nan),
+         "niveau": j["niveau"].to_numpy(dtype=float), "ligue": j["ligue"].to_numpy(dtype=float),
+         "pression": X, "pression_ligue": L}
+    # Echelle de chaque bloc : distance mediane a 40 joueurs de reference tires au
+    # hasard (graine fixe : memes echelles d'un affichage a l'autre).
+    tirage = np.random.default_rng(7).choice(len(j), size=min(40, len(j)), replace=False)
+    morceaux = {b: [] for b in SIM_POIDS}
+    for i in tirage:
+        for b, v in _sim_distances(d, int(i)).items():
+            morceaux[b].append(v)
+    d["echelles"] = {}
+    for b, v in morceaux.items():
+        v = np.concatenate(v)
+        v = v[~np.isnan(v) & (v > 0)]
+        d["echelles"][b] = float(np.median(v)) if len(v) else np.nan
+    return d
+
+
+def profils_similaires(cle: tuple, poids: tuple = POIDS_DEFAUT) -> pd.DataFrame:
+    """Joueurs du meme poste, du plus au moins semblable a celui de la fiche.
+    cle : (playerId, squadId, iterationId, position, archetype)."""
+    d = donnees_similarite(cle[4], poids)
+    j = d["joueurs"]
+    moi = np.flatnonzero((j["playerId"] == cle[0]) & (j["squadId"] == cle[1])
+                         & (j["iterationId"] == cle[2]) & (j["position"] == cle[3]))
+    if not len(moi):
+        return pd.DataFrame()
+    i = int(moi[0])
+    out = j.copy()
+    somme, poids_dispo = np.zeros(len(j)), np.zeros(len(j))
+    distances = _sim_distances(d, i)
+    for bloc, dist in distances.items():
+        ech = d["echelles"].get(bloc)
+        if not ech or np.isnan(ech):
+            continue
+        rel = dist / ech                                   # 1 = ecart de deux joueurs au hasard
+        ok = ~np.isnan(rel)
+        somme += np.where(ok, rel, 0.0) * SIM_POIDS[bloc]
+        poids_dispo += ok * SIM_POIDS[bloc]
+        out[f"sim_{bloc}"] = np.round(100 * 0.5 ** rel, 0)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        brute = 100 * 0.5 ** (somme / np.where(poids_dispo > 0, poids_dispo, np.nan))
+    # Les piliers sont le coeur de la comparaison : sans eux, pas de similarite.
+    brute = np.where(np.isnan(distances["piliers"]), np.nan, brute)
+    volume = np.minimum(out["minutes"].fillna(0) / SIM_MINUTES_PLEINES,
+                        out["matchs"].fillna(0) / SIM_MATCHS_PLEINS).clip(0, 1).to_numpy(dtype=float)
+    fiab = np.sqrt(volume * volume[i])                      # les deux joueurs comptent
+    out["similarite_brute"] = np.round(brute, 1)
+    out["fiabilite"] = np.round(100 * fiab, 0)
+    out["similarite"] = np.round(50 + (brute - 50) * (0.5 + 0.5 * fiab), 1)
+    out["blocs_mesures"] = np.round(100 * poids_dispo / sum(SIM_POIDS.values()), 0)
+    out = out[out["playerId"] != cle[0]].dropna(subset=["similarite"])
+    # Un joueur, une ligne : sa saison la plus ressemblante.
+    return (out.sort_values("similarite", ascending=False).drop_duplicates("playerId")
+            .reset_index(drop=True))
+
+
+def section_similaires(j, cle: tuple) -> None:
+    """Resultat du bouton « Trouver des profils similaires »."""
+    arch = cle[4]
+    st.markdown(f"#### 🔎 Profils similaires à {j.nom}")
+    sim = profils_similaires(cle, poids_courants())
+    if sim.empty:
+        st.caption("Comparaison impossible : les piliers de ce joueur ne sont pas mesurés.")
+        return
+    f1, f2, f3, f4 = st.columns([2, 1, 1, 1])
+    toutes = sorted(sim["saison"].dropna().unique(), key=fin_saison, reverse=True)
+    saisons_sim = f1.multiselect("Saisons", toutes, default=[x for x in toutes if x in (saison or [])],
+                                 key=f"sim_saisons_{cle}", placeholder="Toutes les saisons")
+    age_sim = f2.slider("Âge maximum", 16, 40, 40, key=f"sim_age_{cle}")
+    min_sim = f3.slider("Minutes minimum", 400, 3000, 400, step=100, key=f"sim_min_{cle}")
+    sans_top5 = f4.checkbox("Sans les 5 grands championnats", key=f"sim_top5_{cle}")
+    vue = sim[(sim["minutes"] >= min_sim) & ((sim["age"] <= age_sim) | sim["age"].isna() if age_sim == 40
+                                             else sim["age"] <= age_sim)]
+    if saisons_sim:
+        vue = vue[vue["saison"].isin(saisons_sim)]
+    if sans_top5:
+        vue = vue[~vue["top5_europe"].fillna(False).astype(bool)]
+    vue = vue.head(50).reset_index(drop=True)
+    if vue.empty:
+        st.caption("Aucun joueur ne passe ces filtres.")
+        return
+    blocs = [b for b in SIM_POIDS if f"sim_{b}" in vue]
+    pct = lambda nom, aide: st.column_config.NumberColumn(nom, format="%.0f", help=aide)    # noqa: E731
+    ev = st.dataframe(
+        vue, hide_index=True, width="stretch", height=min(430, 80 + 36 * len(vue)),
+        key=f"sim_tbl_{cle}", on_select="rerun", selection_mode="single-row",
+        column_order=["nom", "club", "competition", "saison", "age", "minutes", "similarite", "fiabilite"]
+                     + [f"sim_{b}" for b in blocs] + ["profil_principal"],
+        column_config={
+            "similarite": st.column_config.ProgressColumn(
+                "Similarité", min_value=0, max_value=100, format="%.0f",
+                help="100 = identique. 50 = aussi proches que deux joueurs du poste pris au hasard. "
+                     "Déjà ramenée vers 50 quand la comparaison est peu fiable."),
+            "fiabilite": st.column_config.NumberColumn(
+                "Fiabilité", format="%.0f %%",
+                help=f"Volume de jeu des DEUX joueurs : 100 % à partir de {SIM_MINUTES_PLEINES} minutes "
+                     f"et {SIM_MATCHS_PLEINS} matchs chacun."),
+            **{f"sim_{b}": pct(SIM_LIBELLES[b], f"Similarité sur ce seul bloc (poids "
+                                                 f"{SIM_POIDS[b] * 100:.0f} % dans le total).") for b in blocs},
+            "minutes": st.column_config.NumberColumn("Min", format="%d"),
+            "profil_principal": st.column_config.TextColumn("Profil RCSC"),
+        })
+    choix = ev.selection["rows"] if ev and "rows" in ev.selection else []
+    if choix:
+        c = vue.iloc[choix[0]]
+        if st.button(f"Ouvrir la fiche de {c.nom} ({c.saison}, {c.club})", key=f"sim_open_{cle}", type="primary"):
+            ouvrir_fiche(int(c.playerId), int(c.squadId), int(c.iterationId), c.position, arch)
+    poids_txt = " · ".join(f"{SIM_LIBELLES[b].lower()} {SIM_POIDS[b] * 100:.0f} %" for b in SIM_POIDS)
+    _nb = lambda v: float(v) if pd.notna(v) else 0.0                                      # noqa: E731
+    moi_fiab = min(1.0, _nb(j.minutes) / SIM_MINUTES_PLEINES, _nb(j.matchs) / SIM_MATCHS_PLEINS)
+    notes = [f"Comparaison dans le pool **{arch}**, toutes saisons ; un joueur n'apparaît qu'une fois, avec sa "
+             f"saison la plus ressemblante. Poids : {poids_txt}.",
+             "**Similarité** : 100 = identique, 50 = aussi proches que deux joueurs du poste pris au hasard. "
+             "Elle dit que deux joueurs se ressemblent, pas que l'un vaut l'autre — le niveau n'en est "
+             "qu'un bloc. 👉 Coche une ligne pour ouvrir sa fiche."]
+    if moi_fiab < 1:
+        notes.insert(0, f"⚠️ **{j.nom} n'a que {j.minutes:.0f} minutes** sur cette fiche : toutes les "
+                        "comparaisons sont moins fiables, et les similarités sont resserrées vers 50.")
+    st.caption("  \n".join(notes))
+
+
 def carte_joueur(j, extra=None) -> None:
     """Fiche complete d'un joueur. j doit porter une colonne archetype_courant.
     extra : fonction affichant un bloc supplementaire sous les boutons (la
@@ -2188,6 +2398,15 @@ def carte_joueur(j, extra=None) -> None:
             del st.query_params["fiche"]
         st.query_params["club"] = f"{int(j.squadId)}-{int(j.iterationId)}"
         st.rerun()
+    # Bascule : un premier clic affiche la liste, un second la referme. L'etat est
+    # garde par fiche, pour qu'elle reste ouverte quand on regle ses filtres.
+    _sim_ouvert = f"sim_ouvert_{cle}"
+    if b4.button("🔎 Trouver des profils similaires", width="stretch", key=f"sim_btn_{cle}",
+                 help="Les joueurs du même poste qui lui ressemblent le plus : piliers, profils RCSC, "
+                      "niveau, championnat, jeu sous pression."):
+        st.session_state[_sim_ouvert] = not st.session_state.get(_sim_ouvert, False)
+    if st.session_state.get(_sim_ouvert):
+        section_similaires(j, cle)
 
     if extra is not None:
         extra()
