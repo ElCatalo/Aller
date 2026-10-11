@@ -340,6 +340,26 @@ def authentifier() -> None:
 authentifier()
 
 
+# Base remplacee sous une app qui tourne (11/10/2026). Apres une publication,
+# l'hebergeur peut mettre les fichiers a jour SANS redemarrer le processus : la
+# connexion gardee en cache reste alors ouverte sur l'ancienne base, et les
+# reponses memorisees (« la base a-t-elle les fins de contrat ? ») restent celles
+# d'avant -- une nouveaute presente dans la base n'apparait jamais a l'ecran.
+# On compare donc la date et la taille des bases a chaque execution, et on vide
+# tous les caches des qu'elles changent.
+@st.cache_resource
+def _bases_vues() -> dict:
+    return {"signature": None}
+
+
+_signature_bases = tuple((f.name, f.stat().st_mtime_ns, f.stat().st_size)
+                         for f in (DB, MON_DB) if f is not None and f.exists())
+if _bases_vues()["signature"] not in (None, _signature_bases):
+    st.cache_data.clear()
+    st.cache_resource.clear()
+_bases_vues()["signature"] = _signature_bases
+
+
 @st.cache_resource
 def connexion():
     if not DB.exists():
