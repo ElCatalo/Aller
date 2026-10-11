@@ -629,6 +629,16 @@ def buts_dispo() -> bool:
         return False
 
 
+@st.cache_data(show_spinner=False)
+def contrat_dispo() -> bool:
+    """La base contient-elle les fins de contrat (ajoutees le 10/10/2026) ?"""
+    try:
+        requete("SELECT contrat_annees FROM v_joueurs LIMIT 1")
+        return True
+    except duckdb.Error:
+        return False
+
+
 # Une base d'avant le 06/10/2026 n'a pas ces colonnes : sans ce retrait, choisir
 # cette lecture ferait echouer toutes les requetes de classement.
 try:
@@ -710,6 +720,8 @@ if buts_dispo():
     CHAMPS += ", buts, passes_d, buts_penalty"
 if SANS_AGE:
     CHAMPS += ", round(score_sans_age,1) AS score_sans_age"
+if contrat_dispo():
+    CHAMPS += ", contrat_fin, round(contrat_annees,1) AS contrat_annees"
 
 
 @st.cache_data(ttl=600)
@@ -1097,6 +1109,17 @@ else:
              "reposent sur un échantillon réduit : ils sont affichés, avec une alerte sur la fiche "
              "et un ⚠ dans le classement." if MINUTES_PROFILS < MINUTES_FIABLES else None)
 pieds = st.sidebar.multiselect("Pied fort", ["droit", "gauche", "les deux"])
+# Annees de contrat restantes, par pas de 6 mois. La borne haute a CONTRAT_MAX
+# veut dire « et plus ». Un joueur sans date de fin connue compte pour 0 : on ne
+# suppose rien, il sort donc des recherches qui exigent du contrat restant.
+CONTRAT_MAX = 5.0
+contrat_plage = (0.0, CONTRAT_MAX)
+if not MONITORING and contrat_dispo():
+    contrat_plage = st.sidebar.slider(
+        "Années de contrat restantes", 0.0, CONTRAT_MAX, (0.0, CONTRAT_MAX), step=0.5, format="%.1f",
+        help=f"Par pas de 6 mois ; {CONTRAT_MAX:.0f} = {CONTRAT_MAX:.0f} ans et plus. Les joueurs sans date "
+             "de fin de contrat connue, ou dont la date est dépassée, sont comptés à 0 an : pour ne voir "
+             "que des joueurs en fin de contrat, mets par exemple 0 à 1.")
 score_min = st.sidebar.slider(f"{COURT} minimum", 0, 100, 0, step=5)
 
 # Jeu sous pression (Etude_Pression_Passes) : filtre de STYLE, il ne change
@@ -1141,6 +1164,10 @@ if niveaux:
     where.append(f"niveau IN ({','.join('?' * len(niveaux))})"); params += [float(n) for n in niveaux]
 if pieds:
     where.append(f"pied_fort IN ({','.join('?' * len(pieds))})"); params += pieds
+if contrat_plage[0] > 0:
+    where.append("contrat_annees >= ?"); params.append(contrat_plage[0])
+if contrat_plage[1] < CONTRAT_MAX:
+    where.append("contrat_annees <= ?"); params.append(contrat_plage[1])
 if PRESSION_FILTRES.get(filtre_pression):
     where.append(PRESSION_FILTRES[filtre_pression])
 _exclus = ids_exclus()
@@ -2369,6 +2396,21 @@ def carte_joueur(j, extra=None) -> None:
              "Passes décisives sur la saison. Indicatif : hors score. "
              "La création est mesurée par le pilier Création (xA, actions créées)."),
         ]
+    if "contrat_fin" in j.index:
+        # Fin de contrat (API de la plateforme Impect). Trois cas : date a venir,
+        # date depassee (fiche Impect pas a jour, ou joueur libre), date absente.
+        _fin = pd.to_datetime(j.contrat_fin, errors="coerce")
+        if pd.isna(_fin):
+            _mets.append(("Fin de contrat", "—", "non renseignée",
+                          "Impect ne donne pas de date de fin pour ce joueur. Dans le filtre il est compté "
+                          "à 0 an de contrat restant."))
+        else:
+            _reste = float(j.contrat_annees) if pd.notna(j.contrat_annees) else 0.0
+            _mets.append(("Fin de contrat", f"{_fin:%m/%Y}",
+                          (f"{_reste:.1f} an{'s' if _reste >= 2 else ''} restant{'s' if _reste >= 2 else ''}"
+                           .replace(".", ",") if _reste > 0 else "date dépassée"),
+                          "Date de fin de contrat selon Impect. Une date dépassée veut dire que la fiche "
+                          "Impect n'est pas à jour ou que le joueur est libre : à vérifier."))
     _mets += [("Pied", j.pied_fort or "—", None, None),
               ("Taille", n_(j.taille_cm, "{:.0f} cm"), None, None)]
     # AU PLUS 5 PAR LIGNE. Avec les trois lectures, les buts et les passes on
@@ -2950,10 +2992,14 @@ with (onglet_mon if MONITORING else
             column_order=["nom", "club", "competition", "pays", "niveau", "saison",
                           "score"] + (["role_milieu"] if archetype in ("SIX", "EIGHT") else [])
                          + _colonnes_profil + [("score_v8" if SC == "qualite_actuelle" else "qualite"),
-                          "age", "minutes"] + _col_prudence + ["pied_fort", "performance", "aj_niveau",
+                          "age", "contrat_fin", "minutes"] + _col_prudence + ["pied_fort", "performance",
+                          "aj_niveau",
                           "aj_age", "aj_traduction", "progression", "gros_matchs", "coef_adv",
                           "rang_mondial"],
             column_config={
+                "contrat_fin": st.column_config.DateColumn(
+                    "Fin contrat", format="MM/YYYY",
+                    help="Fin de contrat selon Impect. Vide = non renseignée (comptée à 0 an dans le filtre)."),
                 "prudence": st.column_config.TextColumn(
                     "⚠", width="small",
                     help=f"Moins de {MINUTES_FIABLES} minutes à ce poste : profil RCSC et jeu sous "
