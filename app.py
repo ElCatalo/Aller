@@ -1134,12 +1134,19 @@ pieds = st.sidebar.multiselect("Pied fort", ["droit", "gauche", "les deux"])
 # suppose rien, il sort donc des recherches qui exigent du contrat restant.
 CONTRAT_MAX = 5.0
 contrat_plage = (0.0, CONTRAT_MAX)
+sans_contrat_depasse = False
 if not MONITORING and contrat_dispo():
     contrat_plage = st.sidebar.slider(
         "Années de contrat restantes", 0.0, CONTRAT_MAX, (0.0, CONTRAT_MAX), step=0.5, format="%.1f",
         help=f"Par pas de 6 mois ; {CONTRAT_MAX:.0f} = {CONTRAT_MAX:.0f} ans et plus. Les joueurs sans date "
              "de fin de contrat connue, ou dont la date est dépassée, sont comptés à 0 an : pour ne voir "
              "que des joueurs en fin de contrat, mets par exemple 0 à 1.")
+    # Date depassee = fiche Impect pas a jour, ou joueur libre : on ne sait pas
+    # lequel. Les joueurs SANS date ne sont pas concernes par cette case.
+    sans_contrat_depasse = st.sidebar.checkbox(
+        "Exclure les fins de contrat dépassées", value=False,
+        help="Retire les joueurs dont la date de fin de contrat est déjà passée (fiche Impect pas à "
+             "jour, ou joueur libre). Les joueurs sans aucune date restent dans la liste.")
 score_min = st.sidebar.slider(f"{COURT} minimum", 0, 100, 0, step=5)
 
 # Jeu sous pression (Etude_Pression_Passes) : filtre de STYLE, il ne change
@@ -1188,6 +1195,8 @@ if contrat_plage[0] > 0:
     where.append("contrat_annees >= ?"); params.append(contrat_plage[0])
 if contrat_plage[1] < CONTRAT_MAX:
     where.append("contrat_annees <= ?"); params.append(contrat_plage[1])
+if sans_contrat_depasse:
+    where.append("(contrat_fin IS NULL OR contrat_fin >= current_date)")
 if PRESSION_FILTRES.get(filtre_pression):
     where.append(PRESSION_FILTRES[filtre_pression])
 _exclus = ids_exclus()
