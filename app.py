@@ -1129,18 +1129,27 @@ else:
              "reposent sur un échantillon réduit : ils sont affichés, avec une alerte sur la fiche "
              "et un ⚠ dans le classement." if MINUTES_PROFILS < MINUTES_FIABLES else None)
 pieds = st.sidebar.multiselect("Pied fort", ["droit", "gauche", "les deux"])
-# Annees de contrat restantes, par pas de 6 mois. La borne haute a CONTRAT_MAX
-# veut dire « et plus ». Un joueur sans date de fin connue compte pour 0 : on ne
-# suppose rien, il sort donc des recherches qui exigent du contrat restant.
-CONTRAT_MAX = 5.0
-contrat_plage = (0.0, CONTRAT_MAX)
+# Fin de contrat : un calendrier, on choisit la plage de dates dans laquelle le
+# contrat du joueur se termine (ex. du 01/06/2027 au 30/06/2028). Tant que les deux
+# dates ne sont pas choisies, le filtre est inactif. Un joueur sans date de fin
+# connue ne peut etre dans aucune plage : il sort de la liste des que le filtre
+# est actif, sauf si la case ci-dessous le rattrape.
+contrat_plage, avec_sans_date = (), False
 sans_contrat_depasse = False
 if not MONITORING and contrat_dispo():
-    contrat_plage = st.sidebar.slider(
-        "Années de contrat restantes", 0.0, CONTRAT_MAX, (0.0, CONTRAT_MAX), step=0.5, format="%.1f",
-        help=f"Par pas de 6 mois ; {CONTRAT_MAX:.0f} = {CONTRAT_MAX:.0f} ans et plus. Les joueurs sans date "
-             "de fin de contrat connue, ou dont la date est dépassée, sont comptés à 0 an : pour ne voir "
-             "que des joueurs en fin de contrat, mets par exemple 0 à 1.")
+    _auj = pd.Timestamp.now().date()
+    contrat_plage = st.sidebar.date_input(
+        "Fin de contrat entre", value=(), min_value=_auj.replace(year=_auj.year - 5),
+        max_value=_auj.replace(year=_auj.year + 10), format="DD/MM/YYYY", key="contrat_plage",
+        help="Clique une première date puis une seconde : seuls restent les joueurs dont le contrat "
+             "se termine entre les deux. Vide = pas de filtre. Pour l'effacer, la croix à droite du champ.")
+    contrat_plage = tuple(contrat_plage) if isinstance(contrat_plage, (tuple, list)) else (contrat_plage,)
+    if len(contrat_plage) == 1:
+        st.sidebar.caption("Choisis la seconde date pour activer le filtre.")
+    avec_sans_date = st.sidebar.checkbox(
+        "Garder aussi les joueurs sans date", value=False, disabled=len(contrat_plage) != 2,
+        help="Impect ne donne pas de date de fin pour environ 8 % des joueurs. Décoché, ils sortent de "
+             "la liste dès qu'une plage est choisie.")
     # Date depassee = fiche Impect pas a jour, ou joueur libre : on ne sait pas
     # lequel. Les joueurs SANS date ne sont pas concernes par cette case.
     sans_contrat_depasse = st.sidebar.checkbox(
@@ -1191,10 +1200,10 @@ if niveaux:
     where.append(f"niveau IN ({','.join('?' * len(niveaux))})"); params += [float(n) for n in niveaux]
 if pieds:
     where.append(f"pied_fort IN ({','.join('?' * len(pieds))})"); params += pieds
-if contrat_plage[0] > 0:
-    where.append("contrat_annees >= ?"); params.append(contrat_plage[0])
-if contrat_plage[1] < CONTRAT_MAX:
-    where.append("contrat_annees <= ?"); params.append(contrat_plage[1])
+if len(contrat_plage) == 2:
+    _d1, _d2 = sorted(contrat_plage)
+    where.append("(contrat_fin BETWEEN ? AND ?" + (" OR contrat_fin IS NULL)" if avec_sans_date else ")"))
+    params += [_d1, _d2]
 if sans_contrat_depasse:
     where.append("(contrat_fin IS NULL OR contrat_fin >= current_date)")
 if PRESSION_FILTRES.get(filtre_pression):
@@ -2431,8 +2440,8 @@ def carte_joueur(j, extra=None) -> None:
         _fin = pd.to_datetime(j.contrat_fin, errors="coerce")
         if pd.isna(_fin):
             _mets.append(("Fin de contrat", "—", "non renseignée",
-                          "Impect ne donne pas de date de fin pour ce joueur. Dans le filtre il est compté "
-                          "à 0 an de contrat restant."))
+                          "Impect ne donne pas de date de fin pour ce joueur. Il sort du filtre « Fin de "
+                          "contrat entre », sauf si la case « Garder aussi les joueurs sans date » est cochée."))
         else:
             _reste = float(j.contrat_annees) if pd.notna(j.contrat_annees) else 0.0
             _mets.append(("Fin de contrat", f"{_fin:%m/%Y}",
@@ -3028,7 +3037,7 @@ with (onglet_mon if MONITORING else
             column_config={
                 "contrat_fin": st.column_config.DateColumn(
                     "Fin contrat", format="MM/YYYY",
-                    help="Fin de contrat selon Impect. Vide = non renseignée (comptée à 0 an dans le filtre)."),
+                    help="Fin de contrat selon Impect. Vide = non renseignée."),
                 "prudence": st.column_config.TextColumn(
                     "⚠", width="small",
                     help=f"Moins de {MINUTES_FIABLES} minutes à ce poste : profil RCSC et jeu sous "
