@@ -534,7 +534,13 @@
 "correspondance au profil": "match to the profile",
 ", valeurs brutes.": ", raw values.",
 "moins": "less",
-"plus": "more"
+"plus": "more",
+"Ailier traditionnel": "Traditional Winger",
+"Touches le long de la ligne": "Touches along the touchline",
+"ligne": "touchline",
+"perd trop de ballons": "loses the ball too often",
+"ne crée pas le danger par la passe": "creates no danger through passing",
+"Centre et Création": "Crossing and Creation"
 },
 "f": [
 [
@@ -1144,9 +1150,14 @@
 "Se retourne plutôt que de remettre",
 "Tient une largeur basse",
 "Vit dans la surface",
-"À l'aise des deux pieds"
+"À l'aise des deux pieds",
+"Collé à la ligne"
 ],
 "b": [
+[
+"^Collé à la ligne",
+"Hugs the touchline"
+],
 [
 "^Balaie la profondeur",
 "Sweeps in behind"
@@ -1226,6 +1237,10 @@
 [
 "^À l'aise des deux pieds",
 "Comfortable with both feet"
+],
+[
+"touches le long de la ligne",
+"touches along the touchline"
 ],
 [
 "sorties hors surface par match",
