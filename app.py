@@ -46,6 +46,340 @@ st.set_page_config(page_title="Scouting Impect — Charleroi", page_icon="🦓",
                    initial_sidebar_state="expanded")
 
 # =============================================================================
+# VERSION ANGLAISE (13/10/2026)
+# =============================================================================
+# L'app est ecrite en francais et le reste : la version anglaise est une couche
+# posee au moment de l'AFFICHAGE. Chaque fonction Streamlit qui montre du texte
+# (markdown, caption, metric, boutons, tableaux, graphiques...) est enveloppee
+# une fois ; en anglais, l'enveloppe traduit ses textes avant de les afficher.
+# Rien d'autre ne change : les valeurs manipulees par le code (options choisies,
+# cles, noms de colonnes des requetes) restent celles du francais, les options
+# des listes sont traduites par format_func.
+#
+# Les traductions sont dans i18n_en.json, a cote de app.py :
+#   s  texte francais exact -> texte anglais
+#   f  gabarits des f-strings ({0}, {1}... = les valeurs inserees)
+#   r  phrases venant de la base (criteres, vigilances des profils RCSC)
+#   p  listes « a, b, c » a decouper avant de chercher un gabarit
+#   t, b  phrases de style de la base, traduites morceau par morceau
+#   h  fragments dans du HTML
+# Un texte absent du fichier s'affiche en francais : ajouter une phrase a l'app
+# sans la traduire ne casse rien. Sans le fichier, le bouton n'apparait pas.
+import functools  # noqa: E402
+import json  # noqa: E402
+
+_I18N_FICHIER = _ICI / "i18n_en.json"
+_I18N_LETTRES = re.compile(r"[A-Za-zÀ-ÿ]{2}")
+_I18N_CHAMP = re.compile(r"(?<!\{)\{(\d+)\}(?!\})")
+_I18N_BALISE = re.compile(r"(</?[a-zA-Z][^<>]*>)")
+_I18N_SEPARATEURS = ("\n\n", "  \n", "\n", " · ", " | ")
+
+
+@st.cache_resource(show_spinner=False)
+def _i18n_charger(_date_fichier: float) -> dict:
+    """Dictionnaire anglais pret a l'emploi (expressions compilees une fois)."""
+    d = json.loads(_I18N_FICHIER.read_text(encoding="utf-8"))
+    exact = d["s"]
+
+    def gabarit(fr: str, en: str):
+        morceaux = _I18N_CHAMP.split(fr)          # texte, n, texte, n, ... texte
+        poids = sum(len(re.sub(r"[^A-Za-zÀ-ÿ]", "", x)) for x in morceaux[0::2])
+        if poids < 4 or fr == en:
+            return None
+
+        def lit(x):
+            return re.escape(x.replace("{{", "{").replace("}}", "}"))
+
+        motif = "".join(lit(x) if i % 2 == 0 else f"(?P<g{x}>.*?)" for i, x in enumerate(morceaux))
+        cible = _I18N_CHAMP.split(en)
+        cible = [x.replace("{{", "{").replace("}}", "}") if i % 2 == 0 else x for i, x in enumerate(cible)]
+        # Version « libre », pour un gabarit noye dans un texte plus long : les
+        # valeurs du debut et de la fin restent en place, seul le milieu est remplace.
+        libre = None
+        debut, fin = morceaux[0] == "", morceaux[-1] == ""
+        if (not debut or (cible[0] == "" and cible[1] == morceaux[1])) \
+                and (not fin or (cible[-1] == "" and cible[-2] == morceaux[-2])) and poids >= 10:
+            m2 = morceaux[2 if debut else 0:len(morceaux) - (2 if fin else 0)]
+            c2 = cible[2 if debut else 0:len(cible) - (2 if fin else 0)]
+            libre = (re.compile("".join(lit(x) if i % 2 == 0 else f"(?P<g{x}>[^\\n]*?)"
+                                        for i, x in enumerate(m2))), c2)
+        return poids, re.compile(motif, re.S), cible, libre
+
+    gabarits = sorted((g for g in (gabarit(a, b) for a, b in d["f"]) if g), key=lambda g: -g[0])
+    return dict(
+        exact=exact, bas={k.lower(): v.lower() for k, v in exact.items()},
+        gabarits=[(g[1], g[2]) for g in gabarits], libres=[g[3] for g in gabarits if g[3]],
+        longs=sorted((k for k in exact if len(k) >= 12 and exact[k] != k), key=len, reverse=True),
+        regles=[(re.compile(a), _I18N_CHAMP.split(b)) for a, b in d["r"]],
+        avant=[(re.compile(a), _I18N_CHAMP.split(b)) for a, b in d["p"]],
+        titres=tuple(d["t"]), subs=[(re.compile(a), b) for a, b in d["b"]], html=d["h"], cache={})
+
+
+def _i18n_dico():
+    try:
+        return _i18n_charger(_I18N_FICHIER.stat().st_mtime)
+    except (OSError, ValueError, KeyError):
+        return None
+
+
+def _i18n_composer(cible: list, valeur, dico: dict, prof: int) -> str:
+    """Remonte la phrase anglaise : textes fixes + valeurs, elles-memes traduites."""
+    return "".join(x if i % 2 == 0 else _i18n_texte(valeur(x) or "", dico, prof + 1) for i, x in enumerate(cible))
+
+
+def _i18n_libres(t: str, dico: dict, prof: int) -> str:
+    """Remplace les gabarits reconnus a l'interieur d'un texte plus long."""
+    for motif, cible in dico["libres"]:
+        t = motif.sub(lambda m, cible=cible: _i18n_composer(cible, lambda n: m.group(f"g{n}"), dico, prof), t)
+    return t
+
+
+def _i18n_calcul(t: str, dico: dict, prof: int) -> str:
+    exact = dico["exact"]
+    if t in exact:
+        return exact[t]
+    net = t.strip()
+    if net != t and net in exact:
+        return t.replace(net, exact[net])
+    if net.endswith(".") and net[:-1] in exact:    # phrase connue, point final ajoute par le code
+        return t.replace(net, exact[net[:-1]] + ".")
+    if prof > 6 or t.lstrip().startswith("<style"):
+        return t
+    for motif, cible in dico["avant"]:
+        if m := motif.fullmatch(t):
+            return _i18n_composer(cible, lambda n: m.group(int(n)), dico, prof)
+    for motif, cible in dico["gabarits"]:
+        if m := motif.fullmatch(t):
+            return _i18n_composer(cible, lambda n: m.group(f"g{n}"), dico, prof)
+    if len(t) > 4 and t.startswith("**") and t.endswith("**") and t.count("**") == 2:
+        return f"**{_i18n_texte(t[2:-2], dico, prof + 1)}**"
+    if _I18N_BALISE.search(t):                     # HTML : seuls les textes entre balises sont traduits
+        t = "".join(x if i % 2 else _i18n_texte(x, dico, prof + 1) for i, x in enumerate(_I18N_BALISE.split(t)))
+        for fr, en in dico["html"]:
+            t = t.replace(fr, en)
+        return t
+    if any(sep in t for sep in _I18N_SEPARATEURS):
+        # Un gabarit peut contenir lui-meme un separateur : on le cherche avant de decouper.
+        t = _i18n_libres(t, dico, prof)
+        for sep in _I18N_SEPARATEURS:
+            if sep in t:
+                return sep.join(_i18n_texte(x, dico, prof + 1) for x in t.split(sep))
+        return t
+    # Phrases venant de la base : criteres et vigilances des profils RCSC.
+    for motif, cible in dico["regles"]:
+        if m := motif.fullmatch(net):
+            return t.replace(net, _i18n_composer(cible, lambda n: m.group(int(n)), dico, prof))
+    if net.startswith(dico["titres"]):
+        for motif, en in dico["subs"]:
+            t = motif.sub(en, t)
+        return t
+    # Enumeration de mots connus (« aérien défensif, positionnement, ... ») ou mot seul en minuscules.
+    mots = net.split(", ")
+    if len(mots) > 1 and max(map(len, mots)) <= 40 and 2 * sum(x.lower() in dico["bas"] for x in mots) >= len(mots):
+        return t.replace(net, ", ".join(dico["bas"].get(x.lower(), x) for x in mots))
+    if len(net) <= 40 and net.lower() in dico["bas"]:
+        return t.replace(net, dico["bas"][net.lower()])
+    # Texte assemble a partir de plusieurs phrases : remplacement des passages connus.
+    if len(net) >= 12 and " " in net:
+        for k in dico["longs"]:
+            if k in t:
+                t = t.replace(k, exact[k])
+        t = _i18n_libres(t, dico, prof)
+        for fr, en in dico["html"]:
+            t = t.replace(fr, en)
+    return t
+
+
+def _i18n_texte(t: str, dico: dict, prof: int = 0) -> str:
+    if not t or not _I18N_LETTRES.search(t):
+        return t
+    cache = dico["cache"]
+    if (r := cache.get(t)) is None:
+        if len(cache) > 200_000:
+            cache.clear()
+        r = cache[t] = _i18n_calcul(t, dico, prof)
+    return r
+
+
+def anglais() -> bool:
+    return st.session_state.get("langue") == "en"
+
+
+def tr(texte):
+    """Le texte dans la langue choisie. Sans effet en francais ou sur ce qui n'est pas du texte."""
+    if not isinstance(texte, str) or not anglais() or (dico := _i18n_dico()) is None:
+        return texte
+    return _i18n_texte(texte, dico)
+
+
+_I18N_ARGUMENTS = ("label", "body", "help", "placeholder", "text", "delta")
+
+
+def _i18n_tableau(a: tuple, k: dict):
+    """Tableau : en-tetes et cellules de texte traduits sur une copie. Les noms de
+    colonnes cites dans column_config et column_order suivent le renommage."""
+    d = a[0] if a else k.get("data")
+    if not isinstance(d, pd.DataFrame):
+        return a, k
+    d = d.copy(deep=False)
+    for c in d.columns:
+        if d[c].dtype != object and not isinstance(d[c].dtype, pd.StringDtype):
+            continue
+        try:
+            table = {v: tr(v) for v in d[c].dropna().unique() if isinstance(v, str)}
+        except TypeError:                          # cellules non hachables (listes)
+            continue
+        table = {v: w for v, w in table.items() if v != w}
+        if table:
+            d[c] = d[c].map(lambda v, table=table: table.get(v, v) if isinstance(v, str) else v)
+    noms, pris = {}, set(d.columns)
+    for c in d.columns:
+        if isinstance(c, str) and (e := tr(c)) != c and e not in pris:
+            noms[c] = e
+            pris.add(e)
+    config = k.get("column_config")
+    if isinstance(config, dict):
+        k["column_config"] = {noms.get(c, c): tr(v) if isinstance(v, str) else v for c, v in config.items()}
+    if noms:
+        d = d.rename(columns=noms)
+        if k.get("column_order"):
+            k["column_order"] = [noms.get(c, c) for c in k["column_order"]]
+    if a:
+        return (d, *a[1:]), k
+    k["data"] = d
+    return a, k
+
+
+_I18N_CLES_FIGURE = {"text", "name", "hovertemplate", "ticktext", "x", "y", "labels", "title", "texttemplate",
+                     "customdata"}
+
+
+def _i18n_figure(fig):
+    """Graphique Plotly : titres, legendes, annotations, categories et infobulles."""
+    def parcourir(o, cle=None):
+        if isinstance(o, dict):
+            return {c: parcourir(v, c) for c, v in o.items()}
+        if isinstance(o, (list, tuple)):
+            return [parcourir(v, cle) for v in o]
+        if isinstance(o, np.ndarray) and o.dtype == object and cle in _I18N_CLES_FIGURE:
+            return parcourir(o.tolist(), cle)
+        return tr(o) if isinstance(o, str) and cle in _I18N_CLES_FIGURE else o
+
+    try:
+        return go.Figure(parcourir(fig.to_plotly_json()))
+    except Exception:                              # figure inattendue : affichee telle quelle
+        return fig
+
+
+def _i18n_adapter(genre: str, a: tuple, k: dict):
+    """Traduit les textes d'un appel Streamlit, selon le genre de fonction."""
+    if genre == "tableau":
+        return _i18n_tableau(a, k)
+    if genre == "figure":
+        if a and isinstance(a[0], go.Figure):
+            a = (_i18n_figure(a[0]), *a[1:])
+        return a, k
+    if genre == "onglets":
+        return ([tr(x) for x in a[0]], *a[1:]) if a else a, k
+    n = 3 if genre == "metric" else 1               # metric : label, valeur, delta
+    a = tuple(tr(x) if i < n else x for i, x in enumerate(a))
+    for c in _I18N_ARGUMENTS + (("value",) if genre == "metric" else ()):
+        if isinstance(k.get(c), str):
+            k[c] = tr(k[c])
+    if genre == "options":
+        # Les options gardent leur valeur francaise (le code les compare) : seul
+        # leur libelle a l'ecran est traduit.
+        libelle = k.get("format_func", str)
+        k["format_func"] = lambda o: tr(e) if isinstance(e := libelle(o), str) else e
+        if k.get("captions"):
+            k["captions"] = [tr(x) for x in k["captions"]]
+    return a, k
+
+
+_I18N_GENRES = {
+    "texte": ("markdown", "caption", "title", "header", "subheader", "info", "warning", "error", "success",
+              "toast", "button", "download_button", "form_submit_button", "link_button", "checkbox", "toggle",
+              "text_input", "text_area", "number_input", "date_input", "slider", "expander", "popover",
+              "progress", "write"),
+    "metric": ("metric",),
+    "options": ("radio", "selectbox", "multiselect", "segmented_control", "select_slider", "pills"),
+    "onglets": ("tabs",), "tableau": ("dataframe",), "figure": ("plotly_chart",),
+}
+
+
+def _i18n_installer() -> None:
+    """Enveloppe les fonctions d'affichage de Streamlit, une seule fois par
+    processus. Les enveloppes appellent la version COURANTE de _i18n_adapter,
+    reposee a chaque execution du script : une app modifiee a chaud reste a jour."""
+    from streamlit.delta_generator import DeltaGenerator
+
+    DeltaGenerator._i18n_adapter = staticmethod(_i18n_adapter)
+    if getattr(DeltaGenerator, "_i18n_pose", False):
+        return
+
+    def envelopper(nom: str, genre: str) -> None:
+        origine = getattr(DeltaGenerator, nom, None)
+        if origine is None:
+            return
+
+        @functools.wraps(origine)
+        def enveloppe(self, *a, **k):
+            if st.session_state.get("langue") == "en":
+                a, k = DeltaGenerator._i18n_adapter(genre, a, k)
+            return origine(self, *a, **k)
+
+        setattr(DeltaGenerator, nom, enveloppe)
+        # st.markdown & co sont des methodes deja liees a l'ecran principal : on les relie.
+        lie = getattr(st, nom, None)
+        if isinstance(getattr(lie, "__self__", None), DeltaGenerator):
+            setattr(st, nom, getattr(lie.__self__, nom))
+
+    for genre, noms in _I18N_GENRES.items():
+        for nom in noms:
+            envelopper(nom, genre)
+
+    def colonne(origine):
+        @functools.wraps(origine)
+        def enveloppe(*a, **k):
+            if st.session_state.get("langue") == "en":
+                a, k = DeltaGenerator._i18n_adapter("texte", a, k)
+            return origine(*a, **k)
+        return enveloppe
+
+    for nom in dir(st.column_config):
+        if nom.endswith("Column") and callable(getattr(st.column_config, nom)):
+            setattr(st.column_config, nom, colonne(getattr(st.column_config, nom)))
+    DeltaGenerator._i18n_pose = True
+
+
+ONGLETS = ["Scouting saison", "Monitoring", "Jeu sous pression", "Sporting de Charleroi"]
+
+
+def _i18n_basculer() -> None:
+    """Change de langue. L'onglet ouvert est memorise par son libelle : on le
+    transpose dans la nouvelle langue pour rester sur la meme page."""
+    dico = _i18n_dico()
+    ouvert = st.session_state.get("onglet")
+    vers_en = st.session_state.get("langue") != "en"
+    st.session_state["langue"] = "en" if vers_en else "fr"
+    if dico and isinstance(ouvert, str):
+        for o in ONGLETS:
+            e = dico["exact"].get(o, o)
+            if ouvert == (o if vers_en else e):
+                st.session_state["onglet"] = e if vers_en else o
+
+
+def bouton_langue(cle: str) -> None:
+    """Bouton de bascule francais <-> anglais (absent si le fichier de traductions manque)."""
+    if _i18n_dico() is not None:
+        st.button("🇫🇷 Version française" if anglais() else "🇬🇧 English version", key=cle,
+                  on_click=_i18n_basculer, width="stretch")
+
+
+if _i18n_dico() is not None:
+    _i18n_installer()
+
+# =============================================================================
 # IDENTITE VISUELLE -- RCSC, noir et blanc (02/10/2026)
 # =============================================================================
 # Tout tient dans app.py a dessein : le deploiement ne copie que ce fichier et
@@ -306,7 +640,7 @@ def authentifier() -> None:
     _, _mid, _ = st.columns([1, 1.25, 1])
     with _mid:
         st.markdown("<div class='rcsc-accueil'></div>", unsafe_allow_html=True)
-        marque("Plateforme de scouting", hauteur=86, grand=True)
+        marque(tr("Plateforme de scouting"), hauteur=86, grand=True)
         rayures()
     if not _comptes():
         en_ligne = "/mount/src" in str(_ICI)
@@ -334,6 +668,7 @@ def authentifier() -> None:
                     st.rerun()
                 st.error("Identifiants incorrects.")
         st.caption("Accès réservé à la cellule recrutement.")
+        bouton_langue("langue_accueil")
     st.stop()
 
 
@@ -566,8 +901,7 @@ MON = params_monitoring()
 # Onglets a execution paresseuse : seul l'onglet ouvert calcule sa page, et la
 # barre laterale s'adapte (periode et minutes sur la periode en Monitoring).
 onglet_saison, onglet_mon, onglet_pression, onglet_rcsc = st.tabs(
-    ["Scouting saison", "Monitoring", "Jeu sous pression", "Sporting de Charleroi"],
-    key="onglet", on_change="rerun")
+    ONGLETS, key="onglet", on_change="rerun")
 MONITORING = bool(onglet_mon.open)
 # Onglet « Jeu sous pression » : classements des metriques de l'etude de pression.
 # Comme l'onglet maison, il a ses propres filtres et n'utilise pas le classement.
@@ -582,8 +916,13 @@ with st.sidebar:
     marque("Scouting · Impect", hauteur=46)
     rayures(fine=True)
     st.caption(f"Données du {genere_le} · {st.session_state['connecte']}")
+    bouton_langue("langue_barre")
     if st.button("Se déconnecter", width="stretch"):
-        st.session_state.clear(); st.rerun()
+        _langue = st.session_state.get("langue")
+        st.session_state.clear()
+        if _langue:                                 # la langue choisie survit a la deconnexion
+            st.session_state["langue"] = _langue
+        st.rerun()
     st.markdown("**Recherche & poste**")
 
 # Libelle inclus dans l'option (plutot que format_func) : identique a l'ecran,

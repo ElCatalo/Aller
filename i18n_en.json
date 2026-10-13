@@ -1,0 +1,1357 @@
+{
+"p": [
+[
+"(\\*\\*[^*]+\\*\\* contre le [^,(]+?(?: \\([^)]*\\))?), (.+)",
+"{1}, {2}"
+],
+[
+"([+-]\\d+[.,]\\d+ en \\S+ à [^,]+), (.+)",
+"{1}, {2}"
+],
+[
+"((?:\\d\\d/\\d\\d|\\d{4}) à [^,]+\\([^)]*\\)), (.+)",
+"{1}, {2}"
+]
+],
+"s": {
+"Gardien": "Goalkeeper",
+"Défenseur central": "Centre-back",
+"Latéral": "Full-back",
+"Ailier": "Winger",
+"Milieu défensif (6)": "Defensive midfielder (6)",
+"Milieu relayeur (8)": "Box-to-box midfielder (8)",
+"Meneur offensif (10)": "Attacking midfielder (10)",
+"Avant-centre (9)": "Centre-forward (9)",
+"Plateforme de scouting": "Scouting platform",
+"Aucun compte configuré **sur Streamlit Cloud**.\n\nLes comptes ne sont pas dans le dépôt (volontairement). Va dans **Manage app → ⋮ → Settings → Secrets** et colle le contenu de ton `.streamlit/secrets.toml` local, en commençant bien par la ligne `[utilisateurs]`.": "No account configured **on Streamlit Cloud**.\n\nAccounts are not in the repository (on purpose). Go to **Manage app → ⋮ → Settings → Secrets** and paste the content of your local `.streamlit/secrets.toml`, starting with the `[utilisateurs]` line.",
+"Utilisateur": "User",
+"Mot de passe": "Password",
+"Se connecter": "Log in",
+"Identifiants incorrects.": "Incorrect credentials.",
+"Accès réservé à la cellule recrutement.": "Access restricted to the recruitment unit.",
+"Scouting saison": "Season scouting",
+"Jeu sous pression": "Play under pressure",
+"Se déconnecter": "Log out",
+"**Recherche & poste**": "**Search & position**",
+"Poste / archétype": "Position / archetype",
+"Période monitorée (jours)": "Monitored period (days)",
+"Score (performance + niveau + âge)": "Score (performance + level + age)",
+"Performance terrain + ajustement linéaire du niveau du club + ajustement d'âge (formule V8). Avantage les joueurs des gros clubs.": "On-pitch performance + linear adjustment for club level + age adjustment (V8 formula). Favours players at big clubs.",
+"Qualité actuelle (niveau JPL)": "Current quality (JPL level)",
+"Qualité": "Quality",
+"Performance projetée au niveau d'un club moyen de JPL, sans l'âge : ce que le joueur vaut aujourd'hui.": "Performance projected to the level of an average JPL club, without age: what the player is worth today.",
+"Score sans l'âge (performance + niveau)": "Score without age (performance + level)",
+"Score hors âge": "Score ex. age",
+"Le Score privé de son seul ajustement d'âge : même performance, même ajustement du niveau du club, mais un joueur de 31 ans n'est plus pénalisé pour son âge. La lecture à prendre pour chercher un profil expérimenté.": "The Score without its age adjustment only: same performance, same club-level adjustment, but a 31-year-old is no longer penalised for his age. The reading to use when looking for an experienced profile.",
+"Lecture": "Reading",
+"⚖️ Poids de l'âge et du niveau": "⚖️ Weight of age and level",
+" · modifiés": " · modified",
+"Poids de l'âge": "Weight of age",
+"100 % = réglage d'origine. 0 % = l'âge ne compte plus dans le Score. 200 % = un joueur jeune est deux fois plus avantagé, un joueur âgé deux fois plus pénalisé.": "100% = original setting. 0% = age no longer counts in the Score. 200% = a young player gets twice the bonus, an older player twice the penalty.",
+"Poids du niveau du club": "Weight of club level",
+"100 % = réglage d'origine. 0 % = le niveau du club et de son championnat ne compte plus : le Score se rapproche de la performance pure. 200 % = l'écart entre gros et petits clubs est doublé.": "100% = original setting. 0% = the level of the club and its league no longer counts: the Score moves towards pure performance. 200% = the gap between big and small clubs is doubled.",
+"Revenir aux poids d'origine": "Back to original weights",
+"Tous les profils": "All profiles",
+"Classer par": "Sort by",
+"**Score** : performance sur la période + niveau du club + âge (formule du score de saison). **Performance** : la performance terrain seule.": "**Score**: performance over the period + club level + age (season score formula). **Performance**: on-pitch performance only.",
+"Profil RCSC": "RCSC profile",
+"Ne garde que les joueurs qui correspondent à ce sous-archétype, classés par correspondance.": "Keeps only players who match this sub-archetype, sorted by match.",
+"Correspondance minimale": "Minimum match",
+"Ne garde que les joueurs dont la correspondance à ce profil dépasse ce seuil.": "Keeps only players whose match to this profile is above this threshold.",
+"Classer les joueurs du profil par": "Sort the profile's players by",
+"Correspondance": "Match",
+"Saison": "Season",
+"Recherche par nom": "Search by name",
+"ex. Beitia": "e.g. Beitia",
+"Cherche dans TOUS les postes. Les résultats s'affichent juste en dessous : un clic ouvre la fiche et bascule le classement sur le bon poste.": "Searches ALL positions. Results appear just below: one click opens the player card and switches the ranking to the right position.",
+" sur les saisons sélectionnées.": " in the selected seasons.",
+"⚠️ Ce nom sort sur plusieurs postes : choisis la ligne qui t'intéresse.": "⚠️ This name appears at several positions: pick the line you want.",
+"**Championnats**": "**Leagues**",
+"Exclure les 5 grands championnats": "Exclude the Big 5 leagues",
+"Exclure la MLS": "Exclude MLS",
+"Pays": "Country",
+"Niveau de division": "Division level",
+"1 = première division. Vide = tous, y compris les non renseignés.": "1 = top division. Empty = all, including those not filled in.",
+"🔴 Priorité": "🔴 Priority",
+"🟡 À suivre": "🟡 To follow",
+"🔵 Vivier": "🔵 Pool",
+"Priorité": "Priority",
+"Nom": "Name",
+"Poste": "Position",
+"Championnat": "League",
+"Qualité actuelle": "Current quality",
+"Progression": "Progression",
+"Âge": "Age",
+"Pied fort": "Strong foot",
+"Taille (cm)": "Height (cm)",
+"Point fort": "Strength",
+"Point faible": "Weakness",
+"Rang mondial": "World rank",
+"Ajouté le": "Added on",
+"Le nom ne peut pas être vide.": "The name cannot be empty.",
+"« exclus » est réservé à la liste des joueurs exclus.": "“exclus” is reserved for the list of excluded players.",
+"**Listes**": "**Lists**",
+"⚠️ Listes **non durables** : elles seront effacées à la prochaine publication ou au prochain redémarrage. Ajoute la section `[listes]` dans Settings → Secrets.": "⚠️ Lists are **not durable**: they will be wiped at the next publication or restart. Add the `[listes]` section in Settings → Secrets.",
+"+ nouvelle liste…": "+ new list…",
+"Shortlist active": "Active shortlist",
+"Nom de la nouvelle liste": "Name of the new list",
+"Gérer la liste": "Manage list",
+"Les changements s'appliquent à **tous les comptes**.": "Changes apply to **all accounts**.",
+"Nouveau nom": "New name",
+"Renommer": "Rename",
+"Supprimer définitivement": "Delete permanently",
+"Masquer les joueurs exclus": "Hide excluded players",
+"**Profil**": "**Profile**",
+"Âge maximum": "Maximum age",
+"Minutes minimum sur la période": "Minimum minutes over the period",
+"Minutes minimum": "Minimum minutes",
+"Fin de contrat entre": "Contract ends between",
+"Clique une première date puis une seconde : seuls restent les joueurs dont le contrat se termine entre les deux. Vide = pas de filtre. Pour l'effacer, la croix à droite du champ.": "Click a first date then a second: only players whose contract ends between the two remain. Empty = no filter. To clear it, use the cross on the right of the field.",
+"Choisis la seconde date pour activer le filtre.": "Pick the second date to activate the filter.",
+"Garder aussi les joueurs sans date": "Also keep players with no date",
+"Impect ne donne pas de date de fin pour environ 8 % des joueurs. Décoché, ils sortent de la liste dès qu'une plage est choisie.": "Impect gives no end date for about 8% of players. Unticked, they leave the list as soon as a range is chosen.",
+"Exclure les fins de contrat dépassées": "Exclude expired contracts",
+"Retire les joueurs dont la date de fin de contrat est déjà passée (fiche Impect pas à jour, ou joueur libre). Les joueurs sans aucune date restent dans la liste.": "Removes players whose contract end date has already passed (Impect record out of date, or free agent). Players with no date at all stay in the list.",
+"Progresse sous pression (P≥70)": "Progresses under pressure (P≥70)",
+"Garde son ambition sous pression (P≥70)": "Keeps his ambition under pressure (P≥70)",
+"Résiste sous pression (P≥70)": "Resists under pressure (P≥70)",
+"Élimine des adversaires (P≥70)": "Eliminates opponents (P≥70)",
+"Prudent sous pression (P≤30)": "Cautious under pressure (P≤30)",
+"Filtre de style, descriptif : il ne modifie ni le score ni le classement. Percentiles calculés par poste sur une centaine de championnats.": "Style filter, descriptive: it changes neither the score nor the ranking. Percentiles computed by position across about a hundred leagues.",
+"Bas de tableau": "Bottom of the table",
+"Milieu de tableau": "Mid-table",
+"Top du championnat": "Top of the league",
+"**Niveau** = score de performance du poste : 50 = joueur médian, ~67 = top 10 %, déjà corrigé de la difficulté de chaque match.": "**Level** = performance score for the position: 50 = median player, ~67 = top 10%, already corrected for the difficulty of each match.",
+"Médiane du poste : 50": "Position median: 50",
+":gray[**Évolution non mesurable**]": ":gray[**Trend not measurable**]",
+":green[**📈 En nette hausse**]": ":green[**📈 Clearly rising**]",
+":red[**📉 En nette baisse**]": ":red[**📉 Clearly falling**]",
+":green[**↗ Plutôt en hausse**]": ":green[**↗ Rather rising**]",
+":orange[**↘ Plutôt en baisse**]": ":orange[**↘ Rather falling**]",
+":gray[**→ Stable**]": ":gray[**→ Stable**]",
+", un écart qui dépasse nettement ce que produit le hasard.": ", a gap clearly beyond what chance produces.",
+"%{customdata[0]}<br>Du %{customdata[1]} au %{customdata[2]}<br>%{customdata[3]:.0f} matchs · %{customdata[4]:.0f} min<br>Niveau <b>%{y:.0f}</b><extra></extra>": "%{customdata[0]}<br>From %{customdata[1]} to %{customdata[2]}<br>%{customdata[3]:.0f} matches · %{customdata[4]:.0f} min<br>Level <b>%{y:.0f}</b><extra></extra>",
+"Niveau": "Level",
+":gray[**Pas assez de matchs pour comparer**]": ":gray[**Not enough matches to compare**]",
+":green[**⬆ Élève son niveau contre les gros**]": ":green[**⬆ Raises his level against the big teams**]",
+":orange[**⬇ Moins bon contre les gros**]": ":orange[**⬇ Weaker against the big teams**]",
+":gray[**= Même niveau quel que soit l'adversaire**]": ":gray[**= Same level whatever the opponent**]",
+"Niveau ": "Level ",
+"Saison %{customdata[0]} · %{x}<br>%{customdata[1]:.0f} min<br>Niveau <b>%{y:.0f}</b> (mieux que %{customdata[2]:.0f} % du poste)<extra></extra>": "Season %{customdata[0]} · %{x}<br>%{customdata[1]:.0f} min<br>Level <b>%{y:.0f}</b> (better than %{customdata[2]:.0f}% of the position)<extra></extra>",
+"##### 📈 Évolution sur la saison": "##### 📈 Trend over the season",
+"Les courbes ne sont pas reliées d'une saison à l'autre. ": "Curves are not connected from one season to another. ",
+"Un seul bloc de matchs disponible : pas de courbe possible.": "Only one block of matches available: no curve possible.",
+"##### 🆚 Selon le niveau de l'adversaire": "##### 🆚 By opponent level",
+"Barres grises hachurées. ": "Hatched grey bars. ",
+"partiel : une partie du profil n'est pas mesurée": "partial: part of the profile is not measured",
+"règle dérivée des autres profils du poste": "rule derived from the other profiles of the position",
+"#### 🧩 Profils RCSC": "#### 🧩 RCSC profiles",
+"Défenseur couvreur (06) non calculé : vitesse, anticipation et 1v1 lancé ne sont pas mesurés par Impect.": "Covering centre-back (06) not computed: speed, anticipation and running 1v1 are not measured by Impect.",
+"Correspondance = ressemblance de style (0-100), pas un niveau : le niveau reste le score. Vigilance = point d'attention sur un non-négociable du profil ; l'info de style (zones de touches, jeu en retrait, jeu sous pression) est descriptive, elle ne compte pas dans le score.": "Match = style resemblance (0-100), not a level: level remains the score. Watch-out = point of attention on a non-negotiable of the profile; the style info (touch zones, backward play, play under pressure) is descriptive and does not count in the score.",
+"Profil": "Profile",
+"Critères validés": "Criteria met",
+"Vigilance": "Watch-outs",
+"Style (info)": "Style (info)",
+"Pression subie à la passe": "Pressure faced when passing",
+"Pression adverse moyenne (0-100) au moment où il donne le ballon. Décrit surtout son rôle et sa zone de jeu.": "Average opponent pressure (0-100) at the moment he releases the ball. Mostly describes his role and playing zone.",
+"Passes progressives sous pression": "Progressive passes under pressure",
+"Part de ses passes sous forte pression (≥ 50) qui gagnent du terrain vers le but. C'est l'audace : sous pression, la moyenne des championnats tombe à 23 %.": "Share of his passes under high pressure (≥ 50) that gain ground towards goal. This is boldness: under pressure, the league average drops to 23%.",
+"Maintien de l'ambition": "Ambition retained",
+"Cette part rapportée à la même part sans pression. 1,00 = il joue pareil pressé ou libre ; 0,69 est la médiane des championnats.": "That share relative to the same share without pressure. 1.00 = he plays the same pressed or free; 0.69 is the league median.",
+"Réussite sous pression vs attendu": "Success under pressure vs expected",
+"Passes réussies au-dessus de l'attendu, pour 100 passes sous forte pression, à poste, zone et distance comparables.": "Completed passes above expected, per 100 passes under high pressure, for comparable position, zone and distance.",
+"Adversaires éliminés vs attendu / 90": "Opponents bypassed vs expected / 90",
+"Packing : adversaires entre le ballon et le but qu'il supprime par ses passes, au-dessus de l'attendu.": "Packing: opponents between the ball and the goal that he takes out with his passes, above expected.",
+"Passes progressives sous pression / 90": "Progressive passes under pressure / 90",
+"Volume brut, très dépendant du volume de jeu de l'équipe.": "Raw volume, highly dependent on the team's volume of play.",
+"Entrées dans la surface / 90": "Box entries / 90",
+"Passes réussies qui font entrer le ballon dans la surface adverse.": "Completed passes that take the ball into the opponent's box.",
+"#### 🫸 Sous pression": "#### 🫸 Under pressure",
+"Pas de mesure à ce poste : le jeu sous pression est affiché à partir de 80 passes jouées à ce poste, et sa partie progression à partir de 400 minutes et de 20 passes sous forte pression. Certains championnats ne sont pas couverts par l'étude.": "No measure at this position: play under pressure is shown from 80 passes played at this position, and its progression part from 400 minutes and 20 passes under high pressure. Some leagues are not covered by the study.",
+"Indicateur": "Indicator",
+"Valeur": "Value",
+"Percentile du poste": "Position percentile",
+"Comment le lire": "How to read it",
+"Ces indicateurs sont **descriptifs : ils n'entrent dans aucun score**. Mesurés sur 5 056 joueurs suivis d'une saison à l'autre, ils n'ajoutent que 0,4 point de R² pour prédire la saison suivante, quand le score en explique 15,5.": "These indicators are **descriptive: they enter no score**. Measured on 5,056 players followed from one season to the next, they add only 0.4 point of R² to predict the following season, when the score explains 15.5.",
+"Au-dessus de 0,60 la mesure décrit le joueur ; en dessous elle décrit surtout son équipe et son volume de jeu.": "Above 0.60 the measure describes the player; below, it mostly describes his team and his volume of play.",
+"Toutes les actions": "All actions",
+"Offensives": "Offensive",
+"Défensives": "Defensive",
+"Tiers défensif": "Defensive third",
+"Tiers médian": "Middle third",
+"Tiers offensif": "Attacking third",
+"Aile gauche": "Left wing",
+"Demi-espace gauche": "Left half-space",
+"Axe": "Centre",
+"Demi-espace droit": "Right half-space",
+"Aile droite": "Right wing",
+"sens de l'attaque  ⟶   ·   plus foncé = plus d'actions": "direction of attack  ⟶   ·   darker = more actions",
+"Couloir": "Lane",
+"Pas de carte pour cette fiche : championnat hors de la collecte d'événements (championnats de jeunes, saisons d'avant 2025) ou moins de 80 actions à ce poste.": "No map for this card: league outside the event collection (youth leagues, seasons before 2025) or fewer than 80 actions at this position.",
+"Pas de carte sur cette période : les événements de ses matchs ne sont pas encore collectés, ou son championnat est hors de la collecte.": "No map over this period: the events of his matches are not collected yet, or his league is outside the collection.",
+"Actions affichées": "Actions shown",
+"Avec les coups de pied arrêtés": "Including set pieces",
+"Ajoute les touches, corners, coups francs et six mètres qu'il tire. Décoché par défaut : ils dessinent le poteau de corner et la ligne de touche du tireur plus que son jeu.": "Adds the throw-ins, corners, free kicks and goal kicks he takes. Unticked by default: they draw the taker's corner flag and touchline more than his play.",
+"**Championnat en cours de téléchargement.** Seules ses passes et ses réceptions sont disponibles pour l'instant : la carte ci-dessous ne montre qu'elles, quel que soit le bouton. Tirs, conduites de balle, coups de pied arrêtés et interventions défensives arriveront d'un bloc quand tous les matchs du championnat seront récupérés.": "**League being downloaded.** Only his passes and receptions are available for now: the map below shows only those, whatever the button. Shots, ball carries, set pieces and defensive actions will arrive together once all the league's matches are retrieved.",
+"Aucune action de ce type enregistrée à ce poste.": "No action of this type recorded at this position.",
+"Actions sur la carte": "Actions on the map",
+"Matchs": "Matches",
+"Affiché : **passes** (à leur point de départ) et **réceptions**.": "Shown: **passes** (at their starting point) and **receptions**.",
+"Chaque action est placée à ses coordonnées réelles (événements Impect, cases de 2,5 m), pour ce poste seulement. Le haut de la carte est le côté gauche du joueur. Le tableau donne la part des actions par couloir et par tiers Impect. Descriptif : hors score.": "Each action is placed at its real coordinates (Impect events, 2.5 m cells), for this position only. The top of the map is the player's left side. The table gives the share of actions by lane and by Impect third. Descriptive: outside the score.",
+"Piliers": "Pillars",
+"Profils RCSC": "RCSC profiles",
+"Sous pression": "Under pressure",
+"Pression du championnat": "League pressure",
+"Comparaison impossible : les piliers de ce joueur ne sont pas mesurés.": "Comparison impossible: this player's pillars are not measured.",
+"Saisons": "Seasons",
+"Toutes les saisons": "All seasons",
+"Sans les 5 grands championnats": "Without the Big 5 leagues",
+"Aucun joueur ne passe ces filtres.": "No player passes these filters.",
+"Similarité": "Similarity",
+"100 = identique. 50 = aussi proches que deux joueurs du poste pris au hasard. Déjà ramenée vers 50 quand la comparaison est peu fiable.": "100 = identical. 50 = as close as two players at the position picked at random. Already pulled towards 50 when the comparison is unreliable.",
+"Fiabilité": "Reliability",
+"**Similarité** : 100 = identique, 50 = aussi proches que deux joueurs du poste pris au hasard. Elle dit que deux joueurs se ressemblent, pas que l'un vaut l'autre — le niveau n'en est qu'un bloc. 👉 Coche une ligne pour ouvrir sa fiche.": "**Similarity**: 100 = identical, 50 = as close as two players at the position picked at random. It says two players resemble each other, not that one is worth the other — level is only one block. 👉 Tick a row to open his card.",
+"**Ses autres saisons**": "**His other seasons**",
+" — même club, division et poste : intégrée aux deux graphes de cette fiche": " — same club, division and position: included in both charts of this card",
+" — même poste, autre club et/ou championnat : intégrée à la courbe Évolution": " — same position, other club and/or league: included in the Trend curve",
+"✓ = même club, même division, même poste : ajoutée en gris aux graphes Évolution et Adversaires": "✓ = same club, same division, same position: added in grey to the Trend and Opponents charts",
+"📈 = même poste mais autre club et/ou championnat : ajoutée en orange à la courbe Évolution seulement": "📈 = same position but other club and/or league: added in orange to the Trend curve only",
+"Buts": "Goals",
+"Buts marqués sur la saison, toutes compétitions de ce championnat. Donnée indicative : elle n'entre dans aucun score.": "Goals scored over the season, all competitions of this league. Indicative data: it enters no score.",
+"Passes déc.": "Assists",
+"Passes décisives sur la saison. Indicatif : hors score. La création est mesurée par le pilier Création (xA, actions créées).": "Assists over the season. Indicative: outside the score. Creation is measured by the Creation pillar (xA, actions created).",
+"Fin de contrat": "Contract end",
+"non renseignée": "not available",
+"Impect ne donne pas de date de fin pour ce joueur. Il sort du filtre « Fin de contrat entre », sauf si la case « Garder aussi les joueurs sans date » est cochée.": "Impect gives no end date for this player. He drops out of the “Contract ends between” filter, unless “Also keep players with no date” is ticked.",
+"date dépassée": "date passed",
+"Date de fin de contrat selon Impect. Une date dépassée veut dire que la fiche Impect n'est pas à jour ou que le joueur est libre : à vérifier.": "Contract end date according to Impect. A passed date means the Impect record is out of date or the player is a free agent: to be checked.",
+"Pied": "Foot",
+"Taille": "Height",
+"🚫 Exclure ce joueur": "🚫 Exclude this player",
+"Il ne sera plus proposé dans les recherches par poste.": "He will no longer be suggested in position searches.",
+"🔎 Trouver des profils similaires": "🔎 Find similar profiles",
+"Les joueurs du même poste qui lui ressemblent le plus : piliers, profils RCSC, niveau, championnat, jeu sous pression.": "Players at the same position who resemble him most: pillars, RCSC profiles, level, league, play under pressure.",
+"Piliers — survol : poids dans le score": "Pillars — hover: weight in the score",
+"**Contexte de match**": "**Match context**",
+"Coefficient adversaire": "Opponent coefficient",
+"Coef att/def (attaque)": "Att/def coef (attack)",
+"Coef att/def (défense)": "Att/def coef (defence)",
+"Rating du club": "Club rating",
+"Rating moyen du championnat": "Average league rating",
+"#### Forme et adversaires": "#### Form and opponents",
+"**Points forts**": "**Strengths**",
+"**Points faibles**": "**Weaknesses**",
+"**Autres archétypes de ce poste**": "**Other archetypes for this position**",
+"Ce poste ne correspond qu'à un seul archétype.": "This position matches only one archetype.",
+"**Historique du joueur**": "**Player history**",
+"▶ affichée": "▶ shown",
+"✓ dans les 2 graphes": "✓ in both charts",
+"📈 courbe Évolution": "📈 Trend curve",
+"Saisons où il a assez joué pour être évalué à cet archétype. Boutons « 📅 Ses autres saisons » en haut de la fiche pour les ouvrir. « ✓ dans les 2 graphes » = même poste, club et division ; « 📈 courbe Évolution » = même poste, autre club et/ou championnat.": "Seasons in which he played enough to be assessed at this archetype. Buttons “📅 His other seasons” at the top of the card open them. “✓ in both charts” = same position, club and division; “📈 Trend curve” = same position, other club and/or league.",
+"Une seule saison évaluée à ce poste pour ce joueur.": "Only one season assessed at this position for this player.",
+"%{customdata[0]} contre %{customdata[1]}<br>%{customdata[2]} (rating %{customdata[3]:.2f})<br>%{customdata[4]:.0f} min · %{customdata[5]}<br>Niveau du match <b>%{y:.0f}</b><extra></extra>": "%{customdata[0]} against %{customdata[1]}<br>%{customdata[2]} (rating %{customdata[3]:.2f})<br>%{customdata[4]:.0f} min · %{customdata[5]}<br>Match level <b>%{y:.0f}</b><extra></extra>",
+"Performance brute de la période": "Raw performance over the period",
+"Performance retenue (classement)": "Retained performance (ranking)",
+"Saison (fiche)": "Season (card)",
+"Période monitorée": "Monitored period",
+"Score période": "Period score",
+"Même formule que le Score de saison : performance sur la période + niveau du club + âge. Rang parmi tous les joueurs du poste actifs sur la période.": "Same formula as the season Score: performance over the period + club level + age. Rank among all players at the position active over the period.",
+"Performance retenue pour le classement, après les garde-fous petits échantillons. Comparée à sa performance de saison (fiche).": "Performance retained for the ranking, after the small-sample safeguards. Compared with his season performance (card).",
+"Perf. brute": "Raw perf.",
+"La même période sans les garde-fous du monitoring (confiance de saison, aucune métrique corrigée) : ce que le joueur a montré, bruit compris.": "The same period without the monitoring safeguards (season confidence, no corrected metric): what the player showed, noise included.",
+"Part du signal conservée pour chaque métrique : 30 % sous un match plein, 60 % à 400 minutes (le minimum d'une saison), 100 % à 15 matchs. Plus il a joué, moins sa performance est ramenée vers 50.": "Share of the signal kept for each metric: 30% under one full match, 60% at 400 minutes (the season minimum), 100% at 15 matches. The more he has played, the less his performance is pulled towards 50.",
+"Métriques corrigées": "Corrected metrics",
+"Métriques hors de la plage de confiance, ramenées à sa borne (jamais exclues). Plage d'autant plus étroite qu'il a peu joué.": "Metrics outside the confidence range, brought back to its bound (never excluded). The range is narrower the less he has played.",
+"##### 🗓️ Niveau de chaque match": "##### 🗓️ Level of each match",
+"Aucun match détaillé à ce poste sur la période.": "No detailed match at this position over the period.",
+"Rating adverse": "Opponent rating",
+"Niveau de l'adversaire": "Opponent level",
+"Niveau du match": "Match level",
+"##### 🧱 Piliers : période vs saison": "##### 🧱 Pillars: period vs season",
+"Métriques ramenées dans la plage de confiance : ": "Metrics brought back into the confidence range: ",
+"Pas encore de fiche de saison : il faut 400 minutes jouées à ce poste sur une saison pour être évalué par le scoring de saison.": "No season card yet: 400 minutes played at this position over a season are needed to be assessed by the season scoring.",
+"Base du monitoring absente : relance `python impect-scouting/db_build.py`, puis `publier.py` pour la mettre en ligne.": "Monitoring database missing: rerun `python impect-scouting/db_build.py`, then `publier.py` to put it online.",
+"Joueurs actifs": "Active players",
+"Score médian": "Median score",
+"Meilleur score": "Best score",
+"Matchs médians": "Median matches",
+"Aucun joueur ne correspond à ces filtres sur la période.": "No player matches these filters over the period.",
+"Rang": "Rank",
+"Rang au Score parmi tous les joueurs du poste actifs sur la période, avant tes filtres.": "Rank by Score among all players at the position active over the period, before your filters.",
+"Matchs joués à ce poste sur la période.": "Matches played at this position over the period.",
+"Performance sur la période + niveau du club + âge : même formule et même échelle que le Score de saison.": "Performance over the period + club level + age: same formula and same scale as the season Score.",
+"Performance terrain sur la période, après les garde-fous petits échantillons (c'est elle qui entre dans le Score). 50 = joueur médian du poste.": "On-pitch performance over the period, after the small-sample safeguards (this is what enters the Score). 50 = median player at the position.",
+"La même période sans les garde-fous du monitoring : ce qu'il a montré, bruit compris. Très au-dessus de la performance retenue = gros match(s) sur peu de temps de jeu.": "The same period without the monitoring safeguards: what he showed, noise included. Far above the retained performance = big match(es) on little playing time.",
+"Score saison": "Season score",
+"Score de sa fiche de saison.": "Score of his season card.",
+"Aj. niveau": "Level adj.",
+"Aj. âge": "Age adj.",
+"Part du signal conservée : 30 % sous un match plein, 60 % à 400 min, 100 % à 15 matchs.": "Share of the signal kept: 30% under one full match, 60% at 400 min, 100% at 15 matches.",
+"Métr. corrigées": "Corr. metrics",
+"Métriques ramenées dans la plage de confiance (plus étroite à petit volume).": "Metrics brought back into the confidence range (narrower at low volume).",
+"◀ 500 précédents": "◀ Previous 500",
+"500 suivants ▶": "Next 500 ▶",
+"Télécharger la page affichée (CSV)": "Download the displayed page (CSV)",
+"← Retour à l'effectif": "← Back to the squad",
+"← Retour à la recherche": "← Back to search",
+"Fiche introuvable : le lien vient peut-être d'avant une mise à jour des données.": "Card not found: the link may date from before a data update.",
+"Club introuvable.": "Club not found.",
+"#### Effectif": "#### Squad",
+"Joueurs": "Players",
+"Âge médian": "Median age",
+"👉 Clique sur une ligne pour ouvrir la fiche du joueur.": "👉 Click a row to open the player's card.",
+"Archétype": "Archetype",
+"Joueurs trouvés": "Players found",
+"Aucun joueur ne correspond à ces filtres.": "No player matches these filters.",
+"Fin contrat": "Contract end",
+"Fin de contrat selon Impect. Vide = non renseignée.": "Contract end according to Impect. Empty = not available.",
+"Trad. JPL": "JPL transl.",
+"Traduction au niveau JPL (lecture Qualité actuelle) : de combien sa performance baisserait (ou monterait) dans un club moyen de JPL, pente mesurée sur les transferts réels.": "Translation to JPL level (Current quality reading): how much his performance would drop (or rise) in an average JPL club, slope measured on real transfers.",
+"Rôle": "Role",
+"Rôle qu'Impect lui attribue le plus souvent : 6 (milieu défensif) ou 8 (milieu central), au moins 2/3 du temps de jeu ; 6/8 sinon.": "Role Impect assigns him most often: 6 (defensive midfielder) or 8 (central midfielder), at least 2/3 of playing time; 6/8 otherwise.",
+"Profil du poste dont la correspondance est la plus haute. Détail dans la fiche.": "Profile of the position with the highest match. Detail in the card.",
+"Ressemblance au profil (0-100) : un style, pas un niveau.": "Resemblance to the profile (0-100): a style, not a level.",
+"Gros matchs": "Big matches",
+"Écart de niveau entre ses matchs contre le top du championnat et ses autres matchs, en percentile du poste : 75+ = élève son niveau contre les gros, 25- = baisse. Détail dans la fiche.": "Level gap between his matches against the top of the league and his other matches, as a position percentile: 75+ = raises his level against the big teams, 25- = drops. Detail in the card.",
+"Évolution réelle estimée (points de niveau) entre ses ~10 derniers matchs et le reste de la saison, hasard retiré : au-delà de ±3 = changement notable. Courbe dans la fiche.": "Estimated real change (level points) between his last ~10 matches and the rest of the season, chance removed: beyond ±3 = notable change. Curve in the card.",
+"Coef adv.": "Opp. coef",
+"Coefficient adversaire moyen : >1 = calendrier plus dur que son club": "Average opponent coefficient: >1 = schedule harder than his club",
+"Voir l'effectif d'un club": "View a club's squad",
+"Ouvrir": "Open",
+"Attaque": "Attack",
+"Buteur": "Striker",
+"Soutien": "Support",
+"Ailier gauche": "Left winger",
+"Meneur": "Playmaker",
+"Ailier droit": "Right winger",
+"Double pivot": "Double pivot",
+"Milieu": "Midfield",
+"Defense": "Defence",
+"Latéral gauche": "Left-back",
+"Charnière": "Centre-backs",
+"Latéral droit": "Right-back",
+"But": "Goal",
+"Fiche": "Card",
+"Défenseurs centraux": "Centre-backs",
+"Latéraux": "Full-backs",
+"Milieux défensifs et centraux": "Defensive and central midfielders",
+"Milieux offensifs": "Attacking midfielders",
+"Ailiers": "Wingers",
+"Avant-centres": "Centre-forwards",
+"Gardiens": "Goalkeepers",
+"Résister": "Resist",
+"Réussite vs attendu (toutes passes)": "Success vs expected (all passes)",
+"La même mesure sur toutes ses passes, pressé ou non.": "The same measure on all his passes, pressed or not.",
+"Passes progressives sous pression (%)": "Progressive passes under pressure (%)",
+"Oser": "Dare",
+"Part de ses passes sous forte pression qui gagnent du terrain vers le but.": "Share of his passes under high pressure that gain ground towards goal.",
+"Cette part rapportée à la même part sans pression : 1,00 = il joue pareil pressé ou libre.": "That share relative to the same share without pressure: 1.00 = he plays the same pressed or free.",
+"Peser": "Impact",
+"Adversaires supprimés par ses passes, au-dessus de l'attendu.": "Opponents taken out by his passes, above expected.",
+"#### Étude de pression": "#### Pressure study",
+"La base ne contient pas l'étude de pression.": "The database does not contain the pressure study.",
+"Saison en cours": "Current season",
+"Saisons terminées": "Completed seasons",
+"Score de pression": "Pressure score",
+"Ajusté au contexte de la JPL": "Adjusted to JPL context",
+"Chaque valeur est ramenée à ce qu'elle vaudrait en JPL, d'après l'effet mesuré du niveau et de la pression du championnat. Décoché : valeurs brutes.": "Each value is brought to what it would be worth in the JPL, based on the measured effect of league level and pressure. Unticked: raw values.",
+"Tous les pays": "All countries",
+"Clique une première date puis une seconde : seuls restent les joueurs dont le contrat se termine entre les deux. Vide = pas de filtre.": "Click a first date then a second: only players whose contract ends between the two remain. Empty = no filter.",
+"Score de pression médian": "Median pressure score",
+"Championnats": "Leagues",
+" (valeur ramenée au contexte de la JPL)": " (value brought to JPL context)",
+". 👉 Clique sur une ligne pour ouvrir la fiche du joueur.": ". 👉 Click a row to open the player's card.",
+"Résister 40 % · Oser 30 % · Peser 30 %, en percentiles du poste après ajustement au contexte de la JPL. 50 = joueur médian du poste.": "Resist 40% · Dare 30% · Impact 30%, as position percentiles after adjustment to JPL context. 50 = median player at the position.",
+"Pression subie": "Pressure faced",
+"Pression adverse moyenne (0-100) quand il donne le ballon. Contexte, hors score : elle décrit son rôle et sa zone.": "Average opponent pressure (0-100) when he releases the ball. Context, outside the score: it describes his role and zone.",
+"% passes pressées": "% pressed passes",
+"Part de ses passes faites sous forte pression.": "Share of his passes made under high pressure.",
+"Télécharger le classement affiché (CSV)": "Download the displayed ranking (CSV)",
+"##### Les meilleurs sur chaque métrique": "##### The best on each metric",
+"Mêmes filtres que le classement. Cinq premiers par métrique": "Same filters as the ranking. Top five per metric",
+", valeurs ramenées au contexte de la JPL.": ", values brought to JPL context.",
+"Joueur": "Player",
+"Comment ces chiffres sont construits": "How these figures are built",
+"Métrique": "Metric",
+"Paires": "Pairs",
+"Effet par point de rating": "Effect per rating point",
+"Appliqué": "Applied",
+"Effet par point de pression": "Effect per pressure point",
+"Fidélité": "Reliability",
+"Matchs pairs vs impairs. Au-dessus de 0,60 la mesure décrit le joueur.": "Even vs odd matches. Above 0.60 the measure describes the player.",
+"#### Effectif maison": "#### Home squad",
+"Aucun joueur du RSC Charleroi dans cette base.": "No RSC Charleroi player in this database.",
+"Joueurs évalués": "Players assessed",
+"Minutes cumulées": "Total minutes",
+"Seuls les joueurs ayant assez joué à un poste sont évalués par la pipeline (400 minutes au minimum) : un joueur peu utilisé n'apparaît pas, et un joueur ayant tenu deux postes apparaît une fois par poste.": "Only players who played enough at a position are assessed by the pipeline (400 minutes minimum): a little-used player does not appear, and a player who held two positions appears once per position.",
+"#### Équipe type 4-2-3-1": "#### Typical XI 4-2-3-1",
+"À chaque poste, le joueur qui a le plus joué **à ce poste** sur la saison. 👉 Le bouton ouvre sa fiche complète.": "At each position, the player who played the most **at that position** over the season. 👉 The button opens his full card.",
+"#### Nos archétypes, poste par poste": "#### Our archetypes, position by position",
+"Quel archétype la plateforme applique à chaque poste du club, et combien de joueurs y sont évalués.": "Which archetype the platform applies to each position at the club, and how many players are assessed there.",
+"Case": "Slot",
+"Poste Impect": "Impect position",
+"Archétype(s)": "Archetype(s)",
+"#### Tous les joueurs évalués": "#### All assessed players",
+"Un joueur ayant tenu deux postes apparaît une ligne par poste. 👉 Coche une ligne pour ouvrir sa fiche.": "A player who held two positions appears on one row per position. 👉 Tick a row to open his card.",
+"Perf.": "Perf.",
+"Progr.": "Progr.",
+"Exporter l'effectif (CSV)": "Export the squad (CSV)",
+"#### Suivi": "#### Tracking",
+"Navigue d'une liste à l'autre par les onglets. Les valeurs affichées sont **recalculées à chaque build** : un joueur ajouté l'an dernier montre son niveau actuel.": "Move from one list to another with the tabs. The values shown are **recalculated at every build**: a player added last year shows his current level.",
+"Joueurs exclus": "Excluded players",
+"Postes": "Positions",
+"Répartition : ": "Breakdown: ",
+"Progression ▼": "Progression ▼",
+"Âge ▲": "Age ▲",
+"Nom A→Z": "Name A→Z",
+"Ajout récent ▼": "Recently added ▼",
+"Trier par": "Sort by",
+"Filtrer par poste": "Filter by position",
+"Filtrer par priorité": "Filter by priority",
+"👉 Coche une ligne pour ouvrir sa fiche, plusieurs pour comparer ou déplacer.": "👉 Tick one row to open his card, several to compare or move.",
+"Évolution réelle estimée entre ses ~10 derniers matchs et le reste de la saison. Au-delà de ±3 = changement notable.": "Estimated real change between his last ~10 matches and the rest of the season. Beyond ±3 = notable change.",
+"Sélectionne au moins un joueur pour agir dessus.": "Select at least one player to act on.",
+"Retirer de la liste": "Remove from the list",
+"Vers la liste": "To list",
+"Déplacer →": "Move →",
+"Copier": "Copy",
+"ex. à revoir contre un bloc bas": "e.g. to review against a low block",
+"Enregistrer": "Save",
+"Annotation enregistrée": "Annotation saved",
+"##### Comparaison par piliers": "##### Comparison by pillars",
+"⚠️ Postes différents : les piliers ne portent pas sur les mêmes compétences, la comparaison n'a de sens que pilier par pilier quand le nom est identique.": "⚠️ Different positions: the pillars do not cover the same skills, the comparison only makes sense pillar by pillar when the name is identical.",
+"50 = médiane du poste. Piliers classés par poids dans le score.": "50 = position median. Pillars ordered by weight in the score.",
+"Comparaison limitée à 5 joueurs : réduis la sélection.": "Comparison limited to 5 players: reduce the selection.",
+"Exporter la liste (CSV)": "Export the list (CSV)",
+"Exporter la liste (Excel)": "Export the list (Excel)",
+"arrets": "shot-stopping",
+"Arrêts": "Shot-stopping",
+"aerien defensif": "defensive aerial",
+"aerien_defensif": "defensive aerial",
+"Aérien défensif": "Defensive aerial",
+"aerien offensif": "offensive aerial",
+"aerien_offensif": "offensive aerial",
+"Aérien offensif": "Offensive aerial",
+"centre": "crossing",
+"Centre": "Crossing",
+"construction": "build-up",
+"Construction": "Build-up",
+"creation": "creation",
+"Création": "Creation",
+"dernier tiers": "final third",
+"dernier_tiers": "final third",
+"Dernier tiers": "Final third",
+"finition": "finishing",
+"Finition": "Finishing",
+"interventions": "interventions",
+"jeu aerien": "aerial play",
+"jeu_aerien": "aerial play",
+"Jeu aérien": "Aerial play",
+"positionnement": "positioning",
+"Positionnement": "Positioning",
+"progression dribble": "dribble progression",
+"progression_dribble": "dribble progression",
+"Progression dribble": "Dribble progression",
+"progression passe": "pass progression",
+"progression_passe": "pass progression",
+"Progression passe": "Pass progression",
+"reception box": "box reception",
+"reception_box": "box reception",
+"Réception surface": "Box reception",
+"reception btl": "reception between the lines",
+"reception_btl": "reception between the lines",
+"Réception entre les lignes": "Reception between the lines",
+"reception large": "wide reception",
+"reception_large": "wide reception",
+"Réception large": "Wide reception",
+"reception profondeur": "reception in behind",
+"reception_profondeur": "reception in behind",
+"Réception profondeur": "Reception in behind",
+"recuperation": "ball recovery",
+"Récupération": "Ball recovery",
+"relance longue": "long distribution",
+"relance_longue": "long distribution",
+"Relance longue": "Long distribution",
+"securite balle": "ball security",
+"securite_balle": "ball security",
+"Sécurité balle": "Ball security",
+"sorties profondeur": "sweeping (depth)",
+"sorties_profondeur": "sweeping (depth)",
+"Sorties (profondeur)": "Sweeping (depth)",
+"Disponibilité en profondeur": "Availability in behind",
+"Création et Finition": "Creation and Finishing",
+"Gardien relanceur": "Distributor",
+"Gardien de surface": "Shot-Stopper",
+"Gardien hybride": "Hybrid GK",
+"Défenseur relanceur": "Ball-Playing Centre-Back",
+"Défenseur duelliste": "Stopper",
+"Défenseur couvreur": "Covering Centre-Back",
+"Défenseur hybride": "Hybrid Centre-Back",
+"Latéral offensif": "Attacking Full-Back",
+"Latéral récupérateur": "Defensive Full-Back",
+"Latéral inversé": "Inverted Full-Back",
+"Latéral hybride": "Two-Way Hybrid Full-Back",
+"Régulateur": "Holding Midfielder",
+"Casseur": "Destroyer",
+"Relayeur box-to-box": "Box-to-Box Midfielder",
+"Meneur entre les lignes": "Pocket Playmaker",
+"Milieu polyvalent": "Hybrid Midfielder",
+"Ailier de percussion": "Direct Touchline Winger",
+"Ailier intérieur": "Half-Space Winger",
+"Ailier de profondeur": "In-Behind Runner",
+"Attaquant pivot": "Target Man",
+"Finisseur": "Poacher",
+"Attaquant mobile": "Mobile Forward",
+"Attaquant relayeur (9½)": "Link Forward (9½)",
+"partiel": "partial",
+"calculable": "computable",
+"non_calculable": "not computable",
+"derive": "derived",
+"droit": "right",
+"gauche": "left",
+"les deux": "both",
+"relance bien mais coûte des buts": "distributes well but costs goals",
+"faible dans les airs": "weak in the air",
+"ni créateur ni buteur": "neither creator nor scorer",
+"ne pèse pas devant le but": "no threat in front of goal",
+"profondeur sans production": "depth without output",
+"ne se replie pas": "does not track back",
+"contourné, laisse l'axe ouvert": "bypassed, leaves the centre open",
+"aucune contribution défensive": "no defensive contribution",
+"ne contre-presse pas": "does not counter-press",
+"ne défend pas": "does not defend",
+"pas de premier défenseur": "no first defender",
+"aucune aisance à l'intérieur": "no comfort inside",
+"ne casse aucune ligne": "breaks no line",
+"reste collé à sa ligne": "stays glued to his line",
+"perd le ballon sous pression": "loses the ball under pressure",
+"aucun joueur évalué": "no player assessed",
+" (cette fiche)": " (this card)",
+"~10 derniers matchs": "~last 10 matches",
+", peu fiable": ", unreliable",
+"trop peu<br>de matchs": "too few<br>matches",
+"%{customdata:.0f} action(s) dans cette case de 2,5 m<extra></extra>": "%{customdata:.0f} action(s) in this 2.5 m cell<extra></extra>",
+"correspondance au profil": "match to the profile",
+", valeurs brutes.": ", raw values.",
+"moins": "less",
+"plus": "more"
+},
+"f": [
+[
+"Aucun compte configuré en local. Lance :\n\n`python impect-scouting/gerer_comptes.py`\n\nCherché dans : `{0}`, `{1}`, `{2}`",
+"No account configured locally. Run:\n\n`python impect-scouting/gerer_comptes.py`\n\nLooked in: `{0}`, `{1}`, `{2}`"
+],
+[
+"Base introuvable : {0}\n\nLance d'abord : python impect-scouting/db_build.py",
+"Database not found: {0}\n\nRun first: python impect-scouting/db_build.py"
+],
+[
+"Données du {0} · {1}",
+"Data as of {0} · {1}"
+],
+[
+"Matchs joués dans les N jours précédant le {0}, date des dernières données de matchs publiées.",
+"Matches played in the N days before {0}, the date of the latest published match data."
+],
+[
+"**Âge** : {0} point par année d'écart à {1} ans (27 pour un gardien), plafonné à ±{2}.  \n**Niveau** : {3} points par point de rating du club, autour de {4}.  \nScore, Score hors âge, rangs et percentiles sont recalculés partout, monitoring compris. La Qualité actuelle ne change pas : sa traduction au niveau JPL est mesurée, pas réglée.",
+"**Age**: {0} point per year away from {1} years (27 for a goalkeeper), capped at ±{2}.  \n**Level**: {3} points per club rating point, around {4}.  \nScore, Score ex. age, ranks and percentiles are recalculated everywhere, monitoring included. Current quality does not change: its translation to JPL level is measured, not tuned."
+],
+[
+"Aucun joueur pour « {0} »",
+"No player for “{0}”"
+],
+[
+"**{0} résultat(s)** · {1} joueur(s) · postes : {2}",
+"**{0} result(s)** · {1} player(s) · positions: {2}"
+],
+[
+"{0} · {1} · rang {2} de son poste · {3} min · {4} ans",
+"{0} · {1} · rank {2} at his position · {3} min · {4} y/o"
+],
+[
+"…et {0} autres : précise le nom.",
+"…and {0} more: refine the name."
+],
+[
+"Base des shortlists injoignable ({0}). Réessaie dans une minute ; si ça persiste, vérifie l'adresse [listes] url dans les secrets.",
+"Shortlist database unreachable ({0}). Try again in a minute; if it persists, check the [listes] url address in the secrets."
+],
+[
+"Une liste « {0} » existe déjà : choisis un autre nom.",
+"A list “{0}” already exists: choose another name."
+],
+[
+"« {0} » renommée en « {1} »",
+"“{0}” renamed to “{1}”"
+],
+[
+"Oui, supprimer « {0} » ({1} joueur{2}) pour tous les comptes",
+"Yes, delete “{0}” ({1} player{2}) for all accounts"
+],
+[
+"« {0} » supprimée pour tous les comptes",
+"“{0}” deleted for all accounts"
+],
+[
+"Sous {0} minutes, le profil RCSC et le jeu sous pression d'un joueur reposent sur un échantillon réduit : ils sont affichés, avec une alerte sur la fiche et un ⚠ dans le classement.",
+"Below {0} minutes, a player's RCSC profile and play under pressure rest on a small sample: they are shown, with a warning on the card and a ⚠ in the ranking."
+],
+[
+"Il faut au moins {0} minutes sur ses derniers matchs **et** {1} minutes avant pour comparer deux périodes.",
+"At least {0} minutes over his latest matches **and** {1} minutes before are needed to compare two periods."
+],
+[
+"Sur ses **{0} derniers matchs** ({1} min{2}), niveau **{3}**, contre **{4}** sur ses {5} matchs précédents ({6} min). Écart mesuré : **{7}**. Sur si peu de matchs, environ {8} % d'un tel écart relève du hasard : la progression réelle est estimée à **{9} pt**",
+"Over his **last {0} matches** ({1} min{2}), level **{3}**, against **{4}** over his previous {5} matches ({6} min). Measured gap: **{7}**. On so few matches, about {8}% of such a gap is down to chance: the real progression is estimated at **{9} pt**"
+],
+[
+" Évolution plus favorable que **{0} %** des joueurs du poste.",
+" A more favourable trend than **{0}%** of players at the position."
+],
+[
+"Moyenne des blocs {0}",
+"Average of the blocks {0}"
+],
+[
+"Il faut au moins {0} minutes (~{1} matchs pleins) contre le top du championnat **et** contre les autres adversaires.",
+"At least {0} minutes (~{1} full matches) are needed against the top of the league **and** against the other opponents."
+],
+[
+". Face au top, il est à **{0}** de son niveau contre les autres adversaires ({1}) : un écart plus favorable que **{2} %** des joueurs du poste. Dans l'absolu, face au top, il fait mieux que **{3} %** des joueurs du poste.",
+". Against the top, he is at **{0}** from his level against the other opponents ({1}): a more favourable gap than **{2}%** of players at the position. In absolute terms, against the top, he does better than **{3}%** of players at the position."
+],
+[
+"{0} · même club, même division",
+"{0} · same club, same division"
+],
+[
+"Moyenne de ses paliers {0} : {1}",
+"Average of his tiers {0}: {1}"
+],
+[
+"  \n**En gris : saison{0} {1}**, où il jouait aussi à ce poste, dans ce club et cette division. Même échelle de niveau (référence commune à toutes les saisons), donc directement comparable. {2}Le verdict ci-dessus ne porte que sur la saison {3}.",
+"  \n**In grey: season{0} {1}**, when he also played at this position, in this club and this division. Same level scale (reference common to all seasons), so directly comparable. {2}The verdict above only covers season {3}."
+],
+[
+"  \n**En orange : {0}**, au même poste mais dans un autre club et/ou un autre championnat. ⚠️ Le niveau y est corrigé de la difficulté de chaque match, **pas de la force du championnat** : un même chiffre ne vaut pas la même chose dans deux ligues de force différente. Repère, la traduction au niveau JPL de sa qualité actuelle (force du club et du championnat) : {1} en {2} ici, {3}. Les courbes ne sont jamais reliées d'un club ou d'une saison à l'autre.",
+"  \n**In orange: {0}**, at the same position but in another club and/or another league. ⚠️ The level there is corrected for the difficulty of each match, **not for the strength of the league**: the same figure is not worth the same in two leagues of different strength. As a guide, the translation to JPL level of his current quality (strength of club and league): {1} in {2} here, {3}. Curves are never connected from one club or season to another."
+],
+[
+"{0} Chaque point = un bloc d'environ {1} min (~{2} matchs pleins), du plus ancien à gauche au plus récent à droite. Un bloc s'écarte en moyenne de ±{3} points de la moyenne de ses blocs sans que rien ne change vraiment : c'est la **tendance** qui compte, pas un point isolé. La ligne en tirets est cette moyenne, pas son score de saison ({4}) : calculé sur ~5 matchs seulement, un bloc est mécaniquement tiré vers 50, on le compare donc à ses pareils.",
+"{0} Each point = a block of about {1} min (~{2} full matches), from the oldest on the left to the most recent on the right. A block deviates on average by ±{3} points from the average of his blocks without anything really changing: it is the **trend** that matters, not a single point. The dashed line is that average, not his season score ({4}): computed on ~5 matches only, a block is mechanically pulled towards 50, so it is compared with its peers."
+],
+[
+"  \nPiliers qui ont le plus bougé sur les ~10 derniers matchs : **{0}** ({1} pts de percentile) et **{2}** ({3}). Écarts bruts, encore plus bruités que le niveau global : une piste à vérifier en vidéo, pas une conclusion.",
+"  \nPillars that moved the most over the last ~10 matches: **{0}** ({1} percentile pts) and **{2}** ({3}). Raw gaps, even noisier than the overall level: a lead to check on video, not a conclusion."
+],
+[
+" Le verdict ci-dessus ne porte que sur la saison {0}.",
+" The verdict above only covers season {0}."
+],
+[
+"{0} Paliers = tiers des adversaires selon leur rating Impect à la date du match, dans ce championnat. La difficulté étant déjà compensée, un 50 face au top vaut un joueur médian du poste. Peu de matchs par palier : c'est une tendance, pas une preuve. La ligne en tirets est la moyenne de ses paliers, pas son score de saison ({1}) : calculé sur moins de matchs, un palier est mécaniquement tiré vers 50, on le compare donc à ses pareils.",
+"{0} Tiers = thirds of opponents by their Impect rating on the match date, in this league. Difficulty being already compensated, a 50 against the top equals a median player at the position. Few matches per tier: it is a trend, not proof. The dashed line is the average of his tiers, not his season score ({1}): computed on fewer matches, a tier is mechanically pulled towards 50, so it is compared with its peers."
+],
+[
+"Profils calculés à partir de {0} minutes jouées à ce poste.",
+"Profiles computed from {0} minutes played at this position."
+],
+[
+"Correspondance {0} · P{1} du pool",
+"Match {0} · P{1} of the pool"
+],
+[
+"⚠️ **Moins de {0} minutes** : ses correspondances sont situées par rapport aux joueurs à {1} minutes et plus, dont il ne fait pas partie. Elles lisent des percentiles de piliers calculés sur moins de dix matchs pleins : un écart de quelques points entre deux profils ne les départage pas.",
+"⚠️ **Fewer than {0} minutes**: his matches are positioned against players with {1} minutes or more, a group he is not part of. They read pillar percentiles computed on fewer than ten full matches: a gap of a few points between two profiles does not separate them."
+],
+[
+"**{0}** et **{1}** : {2} point(s) d'écart, sous l'erreur type de la correspondance (~{3}) : profils équivalents, pas classés.",
+"**{0}** and **{1}**: {2} point(s) apart, below the standard error of the match (~{3}): equivalent profiles, not ranked."
+],
+[
+"Lecture dans le pool {0} : dans un autre pool de milieu, ses profils peuvent différer.",
+"Read within the {0} pool: in another midfield pool, his profiles may differ."
+],
+[
+"Détail des {0} profils du poste",
+"Detail of the {0} profiles of the position"
+],
+[
+"⚠️ **Moins de {0} minutes** : ces mesures reposent sur peu de passes, à lire comme une tendance et non comme un trait établi du joueur. Ses percentiles le situent parmi les joueurs de l'échantillon de référence, dont il ne fait pas partie.",
+"⚠️ **Fewer than {0} minutes**: these measures rest on few passes, to be read as a tendency and not as an established trait of the player. His percentiles position him among the players of the reference sample, which he is not part of."
+],
+[
+" Non affiché sur cet échantillon : {0} (fidélité mesurée quasi nulle à ce volume de jeu).",
+" Not shown on this sample: {0} (measured reliability close to zero at this volume of play)."
+],
+[
+"**Traduction vers la JPL** : à ce poste, la JPL presse **{0} point{1} {2}** à la passe et **{3} {4}** à la réception qu'en {5}. Mesuré sur 5 308 transferts, cet écart n'explique pas la perte de performance (rho 0,007) : c'est un contexte de lecture, pas une prédiction.",
+"**Translation to the JPL**: at this position, the JPL presses **{0} point{1} {2}** on the pass and **{3} {4}** on the reception than in {5}. Measured on 5,308 transfers, this gap does not explain the loss of performance (rho 0.007): it is reading context, not a prediction."
+],
+[
+"Fidélité mesurée (matchs pairs vs impairs) : {0}. ",
+"Measured reliability (even vs odd matches): {0}. "
+],
+[
+"La seconde valeur est celle des joueurs entre {0} et {1} minutes, donc la sienne. ",
+"The second value is that of players between {0} and {1} minutes, hence his. "
+],
+[
+"#### 🗺️ Zones d'action · saison {0}",
+"#### 🗺️ Action zones · season {0}"
+],
+[
+"Saison {0} entière · {1} · {2}",
+"Full season {0} · {1} · {2}"
+],
+[
+"##### 🗺️ Zones d'action · {0} derniers jours, du {1} au {2}",
+"##### 🗺️ Action zones · last {0} days, from {1} to {2}"
+],
+[
+"⚠️ **{0} minutes sur la période, moins de {1}** : carte à prendre avec précaution. Sur si peu de temps de jeu elle reflète surtout le déroulement de quelques matchs (adversaire, score, consigne du jour), pas la zone d'activité habituelle du joueur.",
+"⚠️ **{0} minutes over the period, fewer than {1}**: map to be read with caution. On so little playing time it mostly reflects how a few matches went (opponent, score, instructions of the day), not the player's usual activity zone."
+],
+[
+"Carte sur **{0} des {1} matchs** de la période : les événements des autres ne sont pas encore collectés.",
+"Map over **{0} of the {1} matches** of the period: the events of the others are not collected yet."
+],
+[
+"Période monitorée : {0} derniers jours, du {1} au {2} · {3} · {4} ({5})",
+"Monitored period: last {0} days, from {1} to {2} · {3} · {4} ({5})"
+],
+[
+"⚠️ **{0} actions seulement** : la carte donne une tendance, pas une zone d'activité établie. Elle est d'autant plus lissée que le joueur a peu d'actions.",
+"⚠️ **Only {0} actions**: the map gives a tendency, not an established activity zone. It is smoothed all the more as the player has few actions."
+],
+[
+"**Offensives** = chaque contact avec le ballon quand son équipe l'a : passes (à leur point de départ), réceptions, tirs, et conduites de balle — un point tous les 5 m de course balle au pied, plus l'endroit où il perd le ballon quand la conduite n'aboutit ni à une passe ni à un tir ({0} conduites, {1} tirs). **Défensives** = interceptions, dégagements, contres, duels au sol, ballons récupérés, arrêts du gardien.",
+"**Offensive** = every contact with the ball when his team has it: passes (at their starting point), receptions, shots, and ball carries — one point every 5 m of running with the ball, plus the spot where he loses it when the carry leads to neither a pass nor a shot ({0} carries, {1} shots). **Defensive** = interceptions, clearances, blocks, ground duels, recoveries, goalkeeper saves."
+],
+[
+"#### 🔎 Profils similaires à {0}",
+"#### 🔎 Profiles similar to {0}"
+],
+[
+"Volume de jeu des DEUX joueurs : 100 % à partir de {0} minutes et {1} matchs chacun.",
+"Playing volume of BOTH players: 100% from {0} minutes and {1} matches each."
+],
+[
+"Similarité sur ce seul bloc (poids {0} % dans le total).",
+"Similarity on this block alone (weight {0}% in the total)."
+],
+[
+"Ouvrir la fiche de {0} ({1}, {2})",
+"Open the card of {0} ({1}, {2})"
+],
+[
+"Comparaison dans le pool **{0}**, toutes saisons ; un joueur n'apparaît qu'une fois, avec sa saison la plus ressemblante. Poids : {1}.",
+"Comparison within the **{0}** pool, all seasons; a player appears only once, with his most similar season. Weights: {1}."
+],
+[
+"⚠️ **{0} n'a que {1} minutes** sur cette fiche : toutes les comparaisons sont moins fiables, et les similarités sont resserrées vers 50.",
+"⚠️ **{0} has only {1} minutes** on this card: all comparisons are less reliable, and similarities are tightened towards 50."
+],
+[
+"#### Fiche joueur · {0}",
+"#### Player card · {0}"
+],
+[
+" · rôle Impect {0}",
+" · Impect role {0}"
+],
+[
+" · archétype {0}{1}",
+" · archetype {0}{1}"
+],
+[
+"dont {0} pén.",
+"incl. {0} pen."
+],
+[
+"**Score {0}** = performance {1} ({2} de base {3} excellence {4} fragilité) {5} niveau du club {6} âge  \n**Qualité actuelle {7}** = performance {8} {9} traduction au niveau JPL",
+"**Score {0}** = performance {1} ({2} base {3} excellence {4} fragility) {5} club level {6} age  \n**Current quality {7}** = performance {8} {9} translation to JPL level"
+],
+[
+"  \n**Score sans l'âge {0}** = le Score ci-dessus {1}, c'est-à-dire sans son ajustement d'âge",
+"  \n**Score without age {0}** = the Score above {1}, i.e. without its age adjustment"
+],
+[
+"Ajouter à « {0} »",
+"Add to “{0}”"
+],
+[
+"{0} ajouté à « {1} »",
+"{0} added to “{1}”"
+],
+[
+"🏟️ Effectif de {0}",
+"🏟️ Squad of {0}"
+],
+[
+"**Échantillon réduit : {0} minutes à ce poste**, moins de {1}. Les profils RCSC et le jeu sous pression ci-dessous sont à prendre avec précaution : quelques matchs suffisent encore à les déplacer. Le score, lui, est calculé comme pour tous les joueurs à partir de {2} minutes.",
+"**Small sample: {0} minutes at this position**, fewer than {1}. The RCSC profiles and play under pressure below are to be read with caution: a few matches are still enough to move them. The score itself is computed as for all players from {2} minutes."
+],
+[
+"**Points marquants**\n- Pilier le plus fort : **{0}**\n- Pilier le plus faible : **{1}**",
+"**Highlights**\n- Strongest pillar: **{0}**\n- Weakest pillar: **{1}**"
+],
+[
+"Adversaire : {0}",
+"Opponent: {0}"
+],
+[
+"#### 📡 Sur les {0} derniers jours — du {1} au {2}",
+"#### 📡 Over the last {0} days — from {1} to {2}"
+],
+[
+"ℹ️ Fiche de saison affichée : **{0} à {1}, archétype {2}** — il n'a jamais été évalué en {3} sur une saison (400 minutes à ce poste). Le Score de saison n'est donc pas comparable à celui de la période.",
+"ℹ️ Season card shown: **{0} at {1}, archetype {2}** — he has never been assessed as {3} over a season (400 minutes at this position). The season Score is therefore not comparable with the period's."
+],
+[
+"ℹ️ Fiche de saison affichée : **{0} à {1}** — sa saison en cours ({2}, {3}) ne compte pas encore 400 minutes évaluées à ce poste.",
+"ℹ️ Season card shown: **{0} at {1}** — his current season ({2}, {3}) does not yet have 400 assessed minutes at this position."
+],
+[
+"{0} min · {1} pleins",
+"{0} min · {1} full"
+],
+[
+"**Score période {0}** = performance {1} ({2} de base {3} excellence {4} fragilité) {5} niveau du club {6} âge",
+"**Period score {0}** = performance {1} ({2} base {3} excellence {4} fragility) {5} club level {6} age"
+],
+[
+" · Score de saison **{0}**",
+" · Season score **{0}**"
+],
+[
+"{0} Chaque barre = un match, scoré seul contre la référence de saison (couleur = niveau de l'adversaire : tiers de son championnat selon le rating Impect à la date du match). Adversaires sur la période : {1}. Un match isolé est très bruité (±15 à 20 points sans que rien ne change) : c'est la série qui compte. La ligne en tirets est la performance de toute la période, la ligne pleine celle retenue pour le classement (ramenée vers 50 à proportion du peu de temps joué).",
+"{0} Each bar = one match, scored alone against the season reference (colour = opponent level: third of his league by Impect rating on the match date). Opponents over the period: {1}. A single match is very noisy (±15 to 20 points without anything changing): it is the series that counts. The dashed line is the performance over the whole period, the solid line the one retained for the ranking (pulled towards 50 in proportion to the little time played)."
+],
+[
+" {0} autre(s) match(s) joué(s) à un autre poste, hors de ce classement.",
+" {0} other match(es) played at another position, outside this ranking."
+],
+[
+"Détail des {0} matchs",
+"Detail of the {0} matches"
+],
+[
+"Non mesurés sur une période ({0}) : ils reposent sur des statistiques de saison, sans équivalent match par match.",
+"Not measured over a period ({0}): they rest on season statistics, with no match-by-match equivalent."
+],
+[
+"{0} · {1} · {2} · archétype {3}",
+"{0} · {1} · {2} · archetype {3}"
+],
+[
+"Joueurs ayant joué au moins {0} min à ce poste entre le {1} et le {2} (données de matchs publiées le {3}) : **{4} à {5}** sur {6}, classés par {7}. 👉 Clique sur une ligne pour ouvrir la fiche : sa fiche de saison, plus le niveau de chacun de ses matchs de la période.",
+"Players with at least {0} min at this position between {1} and {2} (match data published on {3}): **{4} to {5}** of {6}, sorted by {7}. 👉 Click a row to open the card: his season card, plus the level of each of his matches in the period."
+],
+[
+"**Poids modifiés** — âge {0} %, niveau du club {1} %. Score, Score hors âge, rangs et percentiles sont recalculés avec ces poids ; la Qualité actuelle est inchangée. Réglage dans la barre latérale, « ⚖️ Poids de l'âge et du niveau ».",
+"**Modified weights** — age {0}%, club level {1}%. Score, Score ex. age, ranks and percentiles are recalculated with these weights; Current quality is unchanged. Setting in the sidebar, “⚖️ Weight of age and level”."
+],
+[
+" · rating club {0}",
+" · club rating {0}"
+],
+[
+"{0} médiane",
+"Median {0}"
+],
+[
+"#### Classement {0}",
+"#### Ranking {0}"
+],
+[
+"Meilleure {0}",
+"Best {0}"
+],
+[
+"Joueurs **{0} à {1}** sur {2} qui correspondent au profil **{3}**, classés par {4}. 👉 Clique sur une ligne pour ouvrir la fiche.",
+"Players **{0} to {1}** of {2} matching the profile **{3}**, sorted by {4}. 👉 Click a row to open the card."
+],
+[
+"Joueurs **{0} à {1}** sur {2}, classés par {3}. 👉 Clique sur une ligne pour ouvrir la fiche du joueur.",
+"Players **{0} to {1}** of {2}, sorted by {3}. 👉 Click a row to open the player's card."
+],
+[
+"Moins de {0} minutes à ce poste : profil RCSC et jeu sous pression calculés sur un échantillon réduit, à prendre avec précaution.",
+"Fewer than {0} minutes at this position: RCSC profile and play under pressure computed on a small sample, to be read with caution."
+],
+[
+"Ajustement du Score pour le niveau du club : {0} points par point de rating d'écart avec la référence (0,49), linéaire.",
+"Score adjustment for club level: {0} points per rating point away from the reference (0.49), linear."
+],
+[
+"⚠ = moins de {0} minutes à ce poste ({1} joueur{2} sur cette page) : profil RCSC et jeu sous pression calculés sur un échantillon réduit, à prendre avec précaution.",
+"⚠ = fewer than {0} minutes at this position ({1} player{2} on this page): RCSC profile and play under pressure computed on a small sample, to be read with caution."
+],
+[
+"Joueurs **1 à {0}** sur {1}, classés par **{2}**",
+"Players **1 to {0}** of {1}, sorted by **{2}**"
+],
+[
+"Moins de {0} minutes : mesures moins fiables, score ramené vers 50.",
+"Fewer than {0} minutes: less reliable measures, score pulled towards 50."
+],
+[
+"Percentile du poste sur l'axe « {0} ».",
+"Position percentile on the “{0}” axis."
+],
+[
+"**{0}**  \n:gray[axe {1} · {2} % du score]",
+"**{0}**  \n:gray[axis {1} · {2}% of the score]"
+],
+[
+"**1. Les mesures** viennent de l'étude de pression : chaque passe est comparée à l'attendu de sa situation (poste, niveau de pression, zone, distance). Elles sont calculées par poste.\n\n**2. L'ajustement au contexte.** Sur les joueurs présents dans deux saisons de l'étude au même poste, on mesure de combien chaque métrique bouge quand le championnat change de niveau (rating Impect) et de pression. Un coefficient n'est appliqué que s'il est net (|t| ≥ {0}) ; sinon la métrique n'est pas ajustée. Chaque valeur est ensuite ramenée à ce qu'elle vaudrait en {1}, au même poste.",
+"**1. The measures** come from the pressure study: each pass is compared with the expected outcome of its situation (position, pressure level, zone, distance). They are computed by position.\n\n**2. The context adjustment.** On players present in two seasons of the study at the same position, we measure how much each metric moves when the league changes level (Impect rating) and pressure. A coefficient is applied only if it is clear (|t| ≥ {0}); otherwise the metric is not adjusted. Each value is then brought to what it would be worth in the {1}, at the same position."
+],
+[
+"Lecture : un effet de {0} par point de rating veut dire que la réussite sous pression d'un joueur bouge de {1} quand il monte d'un point de rating (de la D2 belge à la JPL : +0,26 de rating, soit {2}). Un joueur d'un championnat plus fort que la JPL est donc relevé, un joueur d'un championnat plus faible abaissé.\n\n**3. Le score de pression** : percentile du poste sur chaque métrique ajustée, puis **Résister 40 %** (réussite sous pression 30, réussite toutes passes 10), **Oser 30 %** (part de passes progressives sous pression 20, maintien de l'ambition 10), **Peser 30 %** (adversaires éliminés vs attendu 20, entrées dans la surface 5, volume par 90 : 5). Les percentiles sont pris parmi les joueurs à {3} minutes et plus ; sous ce volume le score est ramené vers 50 et la ligne porte un ⚠.\n\n**À garder en tête** : ces mesures décrivent un style et une solidité sous pression. L'étude a montré qu'elles prédisent très peu la performance de la saison suivante une fois le score connu : ce classement complète le Score, il ne le remplace pas.",
+"Reading: an effect of {0} per rating point means a player's success under pressure moves by {1} when he goes up one rating point (from the Belgian second tier to the JPL: +0.26 rating, i.e. {2}). A player from a league stronger than the JPL is therefore raised, a player from a weaker league lowered.\n\n**3. The pressure score**: position percentile on each adjusted metric, then **Resist 40%** (success under pressure 30, success all passes 10), **Dare 30%** (share of progressive passes under pressure 20, ambition retained 10), **Impact 30%** (opponents bypassed vs expected 20, box entries 5, volume per 90: 5). Percentiles are taken among players with {3} minutes or more; below that volume the score is pulled towards 50 and the row carries a ⚠.\n\n**Keep in mind**: these measures describe a style and a solidity under pressure. The study showed they predict very little of next season's performance once the score is known: this ranking complements the Score, it does not replace it."
+],
+[
+"Aucun joueur évalué sur {0}.",
+"No player assessed in {0}."
+],
+[
+"{0} médian",
+"Median {0}"
+],
+[
+"Meilleur {0}",
+"Best {0}"
+],
+[
+"Ouvrir la fiche de {0}",
+"Open the card of {0}"
+],
+[
+"Mes listes · {0}",
+"My lists · {0}"
+],
+[
+"Liste vide. Ajoute des joueurs depuis leur fiche (bouton « ➕ Ajouter à « {0} » »).",
+"Empty list. Add players from their card (button “➕ Add to “{0}””)."
+],
+[
+"  \n⚠️ {0} joueur(s) absent(s) du dernier build (plus assez de minutes, ou saison non reprise) : valeurs figées à l'ajout.",
+"  \n⚠️ {0} player(s) missing from the latest build (not enough minutes any more, or season not carried over): values frozen at the time they were added."
+],
+[
+"**{0} sélectionné(s)** : ",
+"**{0} selected**: "
+],
+[
+"{0} joueur(s) retiré(s) de « {1} »",
+"{0} player(s) removed from “{1}”"
+],
+[
+"{0} joueur(s) déplacé(s) vers « {1} »",
+"{0} player(s) moved to “{1}”"
+],
+[
+"{0} joueur(s) copié(s) vers « {1} »",
+"{0} player(s) copied to “{1}”"
+],
+[
+"Annoter {0}",
+"Annotate {0}"
+],
+[
+"Export Excel indisponible pour cette liste ({0}).",
+"Excel export unavailable for this list ({0})."
+],
+[
+"Du {0} au {1}",
+"From {0} to {1}"
+],
+[
+", du {0} au {1}",
+", from {0} to {1}"
+],
+[
+"**{0}** contre le {1} ({2} matchs{3})",
+"**{0}** against the {1} ({2} matches{3})"
+],
+[
+"trop peu de matchs contre le {0}",
+"too few matches against the {0}"
+],
+[
+"{0} (cette fiche)",
+"{0} (this card)"
+],
+[
+"{0} en {1} à {2}",
+"{0} in {1} at {2}"
+],
+[
+"rang mondial {0}",
+"world rank {0}"
+],
+[
+"{0} matchs",
+"{0} matches"
+],
+[
+"{0} an{1} restant{2}",
+"{0} year{1} left"
+],
+[
+"{0} exclu",
+"{0} excluded"
+],
+[
+"rang {0} du poste",
+"rank {0} at the position"
+],
+[
+"{0} vs saison",
+"{0} vs season"
+],
+[
+"**{0}** contre le {1}",
+"**{0}** against the {1}"
+]
+],
+"r": [
+[
+"([✓⚠·]️? +)(.+)",
+"{1}{2}"
+],
+[
+"([+-]\\d+[.,]\\d+) en (\\S+) à (.+)",
+"{1} in {2} at {3}"
+],
+[
+"(\\d\\d/\\d\\d|\\d{4}) à (.+)",
+"{1} at {2}"
+],
+[
+"(.+) P(\\d+), point fort \\(niveau sur ce profil P(\\d+)\\)",
+"{1} P{2}, a strength (level on this profile P{3})"
+],
+[
+"(.+) P(\\d+) ≥ médiane du poste",
+"{1} P{2} ≥ position median"
+],
+[
+"(.+) P(\\d+) sous la médiane du poste",
+"{1} P{2} below the position median"
+],
+[
+"Niveau P(\\d+) sur (.+) : juste \\(seuil P(\\d+)\\)",
+"Level P{1} on {2}: borderline (threshold P{3})"
+],
+[
+"Niveau P(\\d+) sur (.+) : trop faible pour un profil complet",
+"Level P{1} on {2}: too low for a complete profile"
+],
+[
+"Niveau P(\\d+) sur (.+)",
+"Level P{1} on {2}"
+],
+[
+"Penche vers ce profil plus que (\\d+) % du poste",
+"Leans towards this profile more than {1}% of the position"
+],
+[
+"Plus équilibré que (\\d+) % du poste",
+"More balanced than {1}% of the position"
+],
+[
+"(.+) P(\\d+) : un vrai trou, pas de la polyvalence",
+"{1} P{2}: a real gap, not versatility"
+],
+[
+"(.+) P(\\d+) : un vrai trou",
+"{1} P{2}: a real gap"
+],
+[
+"(.+) P(\\d+) sous son niveau sur ce profil \\(P(\\d+)\\) : pas un point fort",
+"{1} P{2} below his level on this profile (P{3}): not a strength"
+],
+[
+"Fort dans un seul domaine \\(un pilier ≥ P(\\d+), un autre < P(\\d+)\\) : à lire comme relanceur ou gardien de surface",
+"Strong in one area only (one pillar ≥ P{1}, another < P{2}): read as distributor or shot-stopper"
+],
+[
+"Penchant faible : P(\\d+) du poste \\(seuil P(\\d+)\\)",
+"Weak lean: P{1} of the position (threshold P{2})"
+],
+[
+"Penche nettement vers (.+) \\(P(\\d+) vs P(\\d+)\\)",
+"Clearly leans towards {1} (P{2} vs P{3})"
+],
+[
+"Équilibre moyen : P(\\d+) du poste",
+"Average balance: P{1} of the position"
+],
+[
+"(.+) ≤ P(\\d+) : (.+)",
+"{1} ≤ P{2}: {3}"
+],
+[
+"(.+) ≤ P(\\d+)",
+"{1} ≤ P{2}"
+],
+[
+"garde son ambition quand il est pressé \\((.+)\\)",
+"keeps his ambition when pressed ({1})"
+],
+[
+"renonce à progresser quand il est pressé \\((.+)\\)",
+"gives up progressing when pressed ({1})"
+],
+[
+"progresse sous pression \\((.+)\\)",
+"progresses under pressure ({1})"
+],
+[
+"sécurise sous pression \\((.+)\\)",
+"plays safe under pressure ({1})"
+],
+[
+"([A-Z]+) — (.+)",
+"{1} — {2}"
+],
+[
+"(\\D+) (\\d+)",
+"{1} {2}"
+]
+],
+"t": [
+"Balaie la profondeur",
+"Courses dans les canaux",
+"Décroche dans le jeu",
+"Impliqué dans la construction",
+"Joue bas",
+"Joue dans l'axe",
+"Joue en couloir",
+"Joue haut",
+"Joue vers l'avant",
+"Largeur et hauteur",
+"Présent dans les deux moitiés",
+"Recycle l'essentiel de ce qu'il gagne",
+"Remises et jeu en appui",
+"Rentre à l'intérieur",
+"Reste dans sa surface",
+"Se retourne et attaque",
+"Se retourne plutôt que de remettre",
+"Tient une largeur basse",
+"Vit dans la surface",
+"À l'aise des deux pieds"
+],
+"b": [
+[
+"^Balaie la profondeur",
+"Sweeps in behind"
+],
+[
+"^Courses dans les canaux",
+"Runs into the channels"
+],
+[
+"^Décroche dans le jeu",
+"Drops into play"
+],
+[
+"^Impliqué dans la construction",
+"Involved in build-up"
+],
+[
+"^Joue bas",
+"Plays deep"
+],
+[
+"^Joue dans l'axe",
+"Plays centrally"
+],
+[
+"^Joue en couloir",
+"Plays wide"
+],
+[
+"^Joue haut",
+"Plays high"
+],
+[
+"^Joue vers l'avant",
+"Plays forward"
+],
+[
+"^Largeur et hauteur",
+"Width and height"
+],
+[
+"^Présent dans les deux moitiés",
+"Present in both halves"
+],
+[
+"^Recycle l'essentiel de ce qu'il gagne",
+"Recycles most of what he wins"
+],
+[
+"^Remises et jeu en appui",
+"Lay-offs and link play"
+],
+[
+"^Rentre à l'intérieur",
+"Cuts inside"
+],
+[
+"^Reste dans sa surface",
+"Stays in his box"
+],
+[
+"^Se retourne et attaque",
+"Turns and attacks"
+],
+[
+"^Se retourne plutôt que de remettre",
+"Turns rather than laying off"
+],
+[
+"^Tient une largeur basse",
+"Holds a deep width"
+],
+[
+"^Vit dans la surface",
+"Lives in the box"
+],
+[
+"^À l'aise des deux pieds",
+"Comfortable with both feet"
+],
+[
+"sorties hors surface par match",
+"exits outside the box per match"
+],
+[
+"touches en couloir",
+"touches in wide lanes"
+],
+[
+"touches dans l'axe",
+"central touches"
+],
+[
+"touches hautes",
+"high touches"
+],
+[
+"touches dans la surface",
+"touches in the box"
+],
+[
+"passes réussies par match",
+"completed passes per match"
+],
+[
+"ratio de jeu en retrait",
+"backward play ratio"
+],
+[
+"passes du pied faible",
+"weak-foot passes"
+],
+[
+"médiane des",
+"median of"
+],
+[
+"(\\d)er? quartile des",
+"quartile \\1 of"
+],
+[
+"(\\d)e décile des",
+"decile \\1 of"
+],
+[
+"milieux défensifs et centraux",
+"defensive and central midfielders"
+],
+[
+"milieux offensifs",
+"attacking midfielders"
+],
+[
+"avant-centres",
+"centre-forwards"
+],
+[
+"gardiens",
+"goalkeepers"
+],
+[
+"latéraux",
+"full-backs"
+],
+[
+"ailiers",
+"wingers"
+],
+[
+"\\) et ",
+") and "
+],
+[
+"\\) ou ",
+") or "
+],
+[
+" %",
+"%"
+],
+[
+" : ",
+": "
+]
+],
+"h": [
+[
+" ans<br>",
+" y/o<br>"
+],
+[
+" ans</",
+" y/o</"
+],
+[
+"Niveau **",
+"Level **"
+],
+[
+"Niveau too few",
+"Level: too few"
+],
+[
+" the bas de tableau",
+" the bottom of the table"
+],
+[
+" the milieu de tableau",
+" the mid-table"
+],
+[
+" the top du championnat",
+" the top of the league"
+],
+[
+" contre le bas de tableau",
+" against the bottom of the table"
+],
+[
+" contre le milieu de tableau",
+" against the mid-table"
+],
+[
+" contre le top du championnat",
+" against the top of the league"
+]
+]
+}
