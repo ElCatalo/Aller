@@ -3205,9 +3205,9 @@ def vue_monitoring() -> None:
     event = st.dataframe(
         res_m, hide_index=True, width="stretch", height=430, key=f"tableau_mon_{page_m}",
         on_select="rerun", selection_mode="single-row",
-        column_order=["rang", "nom", "club", "competition", "pays", "niveau", "matchs", "minutes", "score",
+        column_order=["rang", "nom", "age", "club", "competition", "pays", "niveau", "matchs", "minutes", "score",
                       "performance", "perf_brute", "score_saison", "aj_niveau", "aj_age", "confiance",
-                      "corrigees", "age", "pied_fort"],
+                      "corrigees", "pied_fort"],
         column_config={
             "rang": st.column_config.NumberColumn("Rang", format="%d",
                                                   help="Rang au Score parmi tous les joueurs du poste actifs "
