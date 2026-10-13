@@ -1136,7 +1136,7 @@ pieds = st.sidebar.multiselect("Pied fort", ["droit", "gauche", "les deux"])
 # est actif, sauf si la case ci-dessous le rattrape.
 contrat_plage, avec_sans_date = (), False
 sans_contrat_depasse = False
-if not MONITORING and contrat_dispo():
+if contrat_dispo():
     _auj = pd.Timestamp.now().date()
     contrat_plage = st.sidebar.date_input(
         "Fin de contrat entre", value=(), min_value=_auj.replace(year=_auj.year - 5),
@@ -1200,12 +1200,21 @@ if niveaux:
     where.append(f"niveau IN ({','.join('?' * len(niveaux))})"); params += [float(n) for n in niveaux]
 if pieds:
     where.append(f"pied_fort IN ({','.join('?' * len(pieds))})"); params += pieds
+# La table du monitoring n'a pas la date de fin de contrat : en Monitoring le
+# filtre passe par la table des joueurs (dim_joueur), a laquelle la date est
+# rattachee. Meme regle dans les deux onglets.
 if len(contrat_plage) == 2:
     _d1, _d2 = sorted(contrat_plage)
-    where.append("(contrat_fin BETWEEN ? AND ?" + (" OR contrat_fin IS NULL)" if avec_sans_date else ")"))
+    if MONITORING:
+        where.append("(playerId IN (SELECT playerId FROM dim_joueur WHERE contrat_fin BETWEEN ? AND ?)"
+                     + (" OR playerId NOT IN (SELECT playerId FROM dim_joueur WHERE contrat_fin IS NOT NULL))"
+                        if avec_sans_date else ")"))
+    else:
+        where.append("(contrat_fin BETWEEN ? AND ?" + (" OR contrat_fin IS NULL)" if avec_sans_date else ")"))
     params += [_d1, _d2]
 if sans_contrat_depasse:
-    where.append("(contrat_fin IS NULL OR contrat_fin >= current_date)")
+    where.append("playerId NOT IN (SELECT playerId FROM dim_joueur WHERE contrat_fin < current_date)"
+                 if MONITORING else "(contrat_fin IS NULL OR contrat_fin >= current_date)")
 if PRESSION_FILTRES.get(filtre_pression):
     where.append(PRESSION_FILTRES[filtre_pression])
 _exclus = ids_exclus()
@@ -3318,6 +3327,7 @@ def donnees_pression() -> pd.DataFrame:
                any_value(v.nom) AS nom, any_value(v.club) AS club, any_value(v.competition) AS competition,
                any_value(v.pays) AS pays, any_value(v.top5_europe) AS top5_europe, any_value(v.saison) AS saison,
                any_value(round(v.age_years, 1)) AS age, any_value(v.minutes_jouees) AS minutes,
+               {"any_value(v.contrat_fin)" if contrat_dispo() else "NULL"} AS contrat_fin,
                any_value(s.rating_moyen_championnat) AS rating, any_value(p.pos) AS pos,
                any_value(p.jeu_saisons) AS jeu, any_value(p.pression_passe) AS pression_subie,
                any_value(p.pct_passes_forte_pression) AS part_forte_pression,
@@ -3398,6 +3408,22 @@ def vue_pression() -> None:
                             "du niveau et de la pression du championnat. Décoché : valeurs brutes.")
     pays_p = st.multiselect("Pays", sorted(d["pays"].dropna().unique()), key="pr_pays",
                             placeholder="Tous les pays")
+    # Fin de contrat : meme calendrier et memes cases que dans la barre laterale.
+    plage_p, garder_sans_date_p, sans_depasse_p = (), False, False
+    if contrat_dispo():
+        h1, h2, h3 = st.columns([2, 2, 2])
+        _auj = pd.Timestamp.now().date()
+        plage_p = h1.date_input(
+            "Fin de contrat entre", value=(), min_value=_auj.replace(year=_auj.year - 5),
+            max_value=_auj.replace(year=_auj.year + 10), format="DD/MM/YYYY", key="pr_contrat",
+            help="Clique une première date puis une seconde : seuls restent les joueurs dont le contrat "
+                 "se termine entre les deux. Vide = pas de filtre.")
+        plage_p = tuple(plage_p) if isinstance(plage_p, (tuple, list)) else (plage_p,)
+        garder_sans_date_p = h2.checkbox("Garder aussi les joueurs sans date", key="pr_contrat_sans",
+                                         disabled=len(plage_p) != 2)
+        sans_depasse_p = h3.checkbox("Exclure les fins de contrat dépassées", key="pr_contrat_dep")
+        if len(plage_p) == 1:
+            h1.caption("Choisis la seconde date pour activer le filtre.")
     v = d[(d["pos"] == pos) & (d["jeu"] == jeu) & (d["minutes"] >= min_p)]
     if age_max_p < 40:
         v = v[v["age"] <= age_max_p]
@@ -3405,6 +3431,13 @@ def vue_pression() -> None:
         v = v[~v["top5_europe"].fillna(False).astype(bool)]
     if sans_mls:
         v = v[v["competition"] != "Major League Soccer"]
+    _fin = pd.to_datetime(v["contrat_fin"], errors="coerce")
+    if len(plage_p) == 2:
+        _d1, _d2 = (pd.Timestamp(x) for x in sorted(plage_p))
+        v = v[_fin.between(_d1, _d2) | (_fin.isna() & garder_sans_date_p)]
+        _fin = _fin.loc[v.index]
+    if sans_depasse_p:
+        v = v[_fin.isna() | (_fin >= pd.Timestamp.now().normalize())]
     if pays_p:
         v = v[v["pays"].isin(pays_p)]
     pref = "aj_" if ajuste else ""
@@ -3428,11 +3461,13 @@ def vue_pression() -> None:
     ev = st.dataframe(
         vue, hide_index=True, width="stretch", height=430, key=f"pr_tbl_{pos}_{jeu}_{tri}_{ajuste}",
         on_select="rerun", selection_mode="single-row",
-        column_order=["rang", "nom", "club", "competition", "saison", "age", "minutes", "prudence",
-                      "score_pression"] + [f"axe_{a}" for a in PRESSION_AXES] + cols_m
+        column_order=["rang", "nom", "club", "competition", "saison", "age", "contrat_fin", "minutes",
+                      "prudence", "score_pression"] + [f"axe_{a}" for a in PRESSION_AXES] + cols_m
                      + ["pression_subie", "part_forte_pression"],
         column_config={
             "rang": st.column_config.NumberColumn("Rang", format="%d"),
+            "contrat_fin": st.column_config.DateColumn("Fin contrat", format="MM/YYYY",
+                                                       help="Fin de contrat selon Impect. Vide = non renseignée."),
             "minutes": st.column_config.NumberColumn("Min", format="%d"),
             "prudence": st.column_config.TextColumn(
                 "⚠", width="small", help=f"Moins de {PRESSION_MINUTES_PLEINES} minutes : mesures moins fiables, "
