@@ -1220,13 +1220,12 @@ def chercher_monitoring(texte: str, periode_j: int) -> pd.DataFrame:
     sur la periode : introuvable. Ici on cherche dans les lignes du monitoring
     de la periode choisie, avec le poste sous lequel il y figure."""
     return requete("""
-        SELECT d.nom, c.club, s.competition, m.archetype, m.position, round(m.score,1) AS score,
+        SELECT m.nom, m.club, m.competition, m.archetype, m.position, round(m.score,1) AS score,
                m.n_matchs, m.playerId, m.squadId, m.iterationId
         FROM mon.mon_joueur m
-        JOIN dim_joueur d USING (playerId)
-        LEFT JOIN dim_club c USING (squadId)
-        LEFT JOIN dim_saison s USING (iterationId)
-        WHERE m.periode_jours = ? AND lower(d.nom) LIKE ?
+        -- Nom lu dans mon_joueur lui-meme : dim_joueur ne contient que les joueurs
+        -- qui ont une fiche de saison (cas Mathys Houdayer, 14/10/2026).
+        WHERE m.periode_jours = ? AND lower(m.nom) LIKE ?
         ORDER BY m.score DESC LIMIT 40""", (int(periode_j), f"%{texte.lower()}%"))
 
 
