@@ -1024,6 +1024,22 @@
 [
 "**{0}** contre le {1}",
 "**{0}** against the {1}"
+],
+[
+"Aucun joueur pour « {0} » sur les {1} derniers jours (il n'a pas joué à un poste du monitoring sur la période).",
+"No player for “{0}” over the last {1} days (he did not play at a monitored position over the period)."
+],
+[
+"**{0} résultat(s)** sur les {1} derniers jours. Un clic bascule le classement sur le poste où il figure.",
+"**{0} result(s)** over the last {1} days. One click switches the ranking to the position where he appears."
+],
+[
+"{0} · **{1}** — {2} · {3} match{4}",
+"{0} · **{1}** — {2} · {3} match{4}"
+],
+[
+"{0} · {1} · score période {2}",
+"{0} · {1} · period score {2}"
 ]
 ],
 "r": [

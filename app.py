@@ -1209,7 +1209,45 @@ def chercher_partout(texte: str, saisons_filtre: tuple, poids: tuple = POIDS_DEF
         ORDER BY score DESC LIMIT 60""", tuple(pa))
 
 
-if recherche and len(recherche.strip()) >= 2:
+@st.cache_data(ttl=600, show_spinner=False)
+def chercher_monitoring(texte: str, periode_j: int) -> pd.DataFrame:
+    """Recherche par nom DANS LE MONITORING (14/10/2026, cas Oliver Ross).
+
+    Le monitoring classe chaque joueur sur un seul poste par periode -- celui
+    ou il a le plus joue -- et n'exige pas de fiche de saison. La recherche de
+    la saison (v_joueurs) l'envoyait donc vers le poste de sa derniere fiche de
+    saison (ex. ailier a Aalborg en 25/26) alors qu'il est classe 9 a Silkeborg
+    sur la periode : introuvable. Ici on cherche dans les lignes du monitoring
+    de la periode choisie, avec le poste sous lequel il y figure."""
+    return requete("""
+        SELECT d.nom, c.club, s.competition, m.archetype, m.position, round(m.score,1) AS score,
+               m.n_matchs, m.playerId, m.squadId, m.iterationId
+        FROM mon.mon_joueur m
+        JOIN dim_joueur d USING (playerId)
+        LEFT JOIN dim_club c USING (squadId)
+        LEFT JOIN dim_saison s USING (iterationId)
+        WHERE m.periode_jours = ? AND lower(d.nom) LIKE ?
+        ORDER BY m.score DESC LIMIT 40""", (int(periode_j), f"%{texte.lower()}%"))
+
+
+if recherche and len(recherche.strip()) >= 2 and MONITORING and MON is not None:
+    _trouves_m = chercher_monitoring(recherche.strip(), periode)
+    with st.sidebar.container(border=True):
+        if _trouves_m.empty:
+            st.caption(f"Aucun joueur pour « {recherche} » sur les {periode} derniers jours "
+                       "(il n'a pas joué à un poste du monitoring sur la période).")
+        else:
+            st.caption(f"**{len(_trouves_m)} résultat(s)** sur les {periode} derniers jours. "
+                       "Un clic bascule le classement sur le poste où il figure.")
+            for _r in _trouves_m.head(20).itertuples():
+                _ici = _r.archetype == archetype
+                if st.button(f"{'📍 ' if _ici else ''}{_r.nom} · **{_r.archetype}** — {_r.club} · "
+                             f"{_r.n_matchs} match{'s' if _r.n_matchs > 1 else ''}",
+                             key=f"gom_{_r.playerId}_{_r.squadId}_{_r.archetype}", width="stretch",
+                             help=f"{_r.competition} · {_r.position} · score période {_r.score}"):
+                    st.session_state["_archetype_a_appliquer"] = _r.archetype
+                    st.rerun()
+elif recherche and len(recherche.strip()) >= 2:
     _trouves = chercher_partout(recherche.strip(), tuple(saison), poids_courants())
     with st.sidebar.container(border=True):
         if _trouves.empty:
