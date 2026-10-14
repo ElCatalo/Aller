@@ -879,6 +879,28 @@ MINUTES_PROFILS = int(PARAMS.get("profils_minutes_min", 900))
 MINUTES_FIABLES = int(PARAMS.get("minutes_fiables", 900))
 
 
+# Nom affiche des piliers : le nom technique sans soulignes, sauf la reception
+# large des lateraux et la reception profondeur des ailiers, affichees toutes
+# deux « réception profondeur/large » (14/10/2026, Alex). Chez le 9 et le 10, la
+# reception profondeur garde son nom.
+_PILIER_AFFICHE = {("reception_large", None): "réception profondeur/large",
+                   ("reception_profondeur", "WG"): "réception profondeur/large"}
+
+
+def nom_pilier(p, archetype=None) -> str:
+    if not isinstance(p, str):
+        return p
+    return (_PILIER_AFFICHE.get((p, archetype)) or _PILIER_AFFICHE.get((p, None))
+            or p.replace("_", " "))
+
+
+def noms_piliers(serie: pd.Series, archetypes=None) -> pd.Series:
+    """nom_pilier sur une colonne ; archetypes = une valeur ou une colonne alignee."""
+    if archetypes is None or isinstance(archetypes, str):
+        return serie.map(lambda p: nom_pilier(p, archetypes))
+    return pd.Series([nom_pilier(p, a) for p, a in zip(serie, archetypes)], index=serie.index)
+
+
 def echantillon_reduit(minutes) -> bool:
     """Le joueur a-t-il un profil et un jeu sous pression calcules sur moins de
     MINUTES_FIABLES minutes ? C'est ce qui declenche l'alerte de la fiche."""
@@ -2860,7 +2882,7 @@ def carte_joueur(j, extra=None) -> None:
         piliers = requete("""SELECT pilier, percentile, poids, progression FROM fait_pilier
             WHERE playerId=? AND squadId=? AND iterationId=? AND position=? AND archetype=?
             ORDER BY poids DESC""", cle)
-        piliers["pilier"] = piliers["pilier"].str.replace("_", " ")
+        piliers["pilier"] = noms_piliers(piliers["pilier"], arch)
         fig = px.bar(piliers, x="percentile", y="pilier", orientation="h",
                      range_x=[0, 100], text="percentile",
                      labels={"percentile": "Percentile du poste", "pilier": ""},
@@ -2883,8 +2905,8 @@ def carte_joueur(j, extra=None) -> None:
                        n_(j.coef_def, "{:.3f}"), n_(j.rating_club, "{:.3f}"),
                        n_(j.rating_ligue, "{:.3f}")]}),
             hide_index=True, width="stretch")
-        st.markdown(f"**Points marquants**\n- Pilier le plus fort : **{str(j.pilier_fort).replace('_', ' ')}**\n"
-                    f"- Pilier le plus faible : **{str(j.pilier_faible).replace('_', ' ')}**")
+        st.markdown(f"**Points marquants**\n- Pilier le plus fort : **{nom_pilier(str(j.pilier_fort), arch)}**\n"
+                    f"- Pilier le plus faible : **{nom_pilier(str(j.pilier_faible), arch)}**")
 
     st.markdown("#### Forme et adversaires")
     d = lignes_joueur("fait_joueur_saison", cle, "archetype").iloc[0]
@@ -2897,6 +2919,7 @@ def carte_joueur(j, extra=None) -> None:
     met = requete("""SELECT metrique, pilier, valeur_brute, z FROM fait_metrique
         WHERE playerId=? AND squadId=? AND iterationId=? AND position=? AND archetype=?
         ORDER BY z DESC""", cle)
+    met["pilier"] = noms_piliers(met["pilier"], arch)
     if not met.empty:
         f1, f2 = st.columns(2)
         f1.markdown("**Points forts**")
@@ -3014,7 +3037,7 @@ def graphe_matchs(matchs: pd.DataFrame, m) -> go.Figure:
     return fig
 
 
-def graphe_piliers_periode(pm: pd.DataFrame, ps: pd.DataFrame) -> go.Figure:
+def graphe_piliers_periode(pm: pd.DataFrame, ps: pd.DataFrame, arch: str | None = None) -> go.Figure:
     """Percentile de chaque pilier sur la periode, a cote de celui de la saison."""
     ordre = (ps if not ps.empty else pm).sort_values("poids", ascending=False)["pilier"].tolist()
     ordre += [p for p in pm["pilier"] if p not in ordre]
@@ -3023,7 +3046,7 @@ def graphe_piliers_periode(pm: pd.DataFrame, ps: pd.DataFrame) -> go.Figure:
         if df.empty:
             continue
         d = df.set_index("pilier").reindex(ordre)
-        fig.add_trace(go.Bar(y=[p.replace("_", " ") for p in ordre], x=d["percentile"], name=nom,
+        fig.add_trace(go.Bar(y=[nom_pilier(p, arch) for p in ordre], x=d["percentile"], name=nom,
                              orientation="h", marker_color=couleur,
                              text=d["percentile"].round(0).astype("Int64").astype(str),
                              textposition="outside", cliponaxis=False))
@@ -3126,8 +3149,8 @@ def section_monitoring(m, fiche) -> None:
               if fiche is not None and not autre_poste
               else pd.DataFrame(columns=["pilier", "percentile", "poids"]))
         if not pm.empty:
-            st.plotly_chart(graphe_piliers_periode(pm, ps), width="stretch", key=f"mon_piliers_{m.playerId}_{arch}")
-            absents = [p.replace("_", " ") for p in ps["pilier"] if p not in set(pm["pilier"])]
+            st.plotly_chart(graphe_piliers_periode(pm, ps, arch), width="stretch", key=f"mon_piliers_{m.playerId}_{arch}")
+            absents = [nom_pilier(p, arch) for p in ps["pilier"] if p not in set(pm["pilier"])]
             if absents:
                 st.caption(f"Non mesurés sur une période ({', '.join(absents)}) : ils reposent sur des "
                            "statistiques de saison, sans équivalent match par match.")
@@ -3506,6 +3529,8 @@ def effectif_rcsc(saison_choisie: str, poids: tuple = POIDS_DEFAUT) -> pd.DataFr
     for c in ("score", "performance", "qualite", "progression", "age",
               "taille_cm", "rang", "minutes"):
         princ[c] = pd.to_numeric(princ[c], errors="coerce")
+    for c in ("pilier_fort", "pilier_faible"):
+        princ[c] = noms_piliers(princ[c], princ["archetype"])
     for c in ("profil_principal", "pilier_fort", "pilier_faible", "pied_fort"):
         princ[c] = princ[c].astype("object").where(princ[c].notna(), "—")
     return princ.sort_values("minutes", ascending=False).reset_index(drop=True)
@@ -4132,6 +4157,9 @@ for _ong, nom_liste in zip(_onglets, _onglets_noms + ["exclus"]):
         if _f_prio:
             vue = vue[vue["priorite"].isin(_f_prio)]
         vue = vue.sort_values(_col_tri, ascending=_asc, na_position="last").reset_index(drop=True)
+        for _c in ("pilier_fort", "pilier_faible"):
+            if _c in vue:
+                vue[_c] = noms_piliers(vue[_c], vue["archetype"])
 
         st.caption("👉 Coche une ligne pour ouvrir sa fiche, plusieurs pour comparer ou déplacer.")
         ev_liste = st.dataframe(
@@ -4221,6 +4249,8 @@ for _ong, nom_liste in zip(_onglets, _onglets_noms + ["exclus"]):
                                "quand le nom est identique.")
                 noms = dict(zip(choisis["playerId"].astype(int), choisis["nom"].astype(str)))
                 pil["joueur"] = pil["playerId"].map(noms)
+                _arch = dict(zip(choisis["playerId"].astype(int), choisis["archetype"].astype(str)))
+                pil["pilier"] = noms_piliers(pil["pilier"], pil["playerId"].map(_arch))
                 fig = go.Figure()
                 for jn, g in pil.groupby("joueur"):
                     g = g.sort_values("poids", ascending=False)
@@ -4255,9 +4285,6 @@ for _ong, nom_liste in zip(_onglets, _onglets_noms + ["exclus"]):
             # lisibles : c'est un document a transmettre, pas un fichier technique.
             _export = vue[[c for c in EXPORT_LISTE if c in vue]].rename(columns=EXPORT_LISTE) \
                 .rename(columns={"Score": COURT})
-            for _c in ("Point fort", "Point faible"):
-                if _c in _export:
-                    _export[_c] = _export[_c].astype("string").str.replace("_", " ")
             # Un export qui echoue ne doit jamais emporter la page : sans ce garde-fou
             # l'erreur d'une liste empechait d'afficher toutes les listes suivantes.
             try:
