@@ -1048,6 +1048,10 @@
 "{1}{2}"
 ],
 [
+"(.+) P(\\d+) sous P(\\d+) : correspondance plafonnée à (\\d+)",
+"{1} P{2} below P{3}: match capped at {4}"
+],
+[
 "([+-]\\d+[.,]\\d+) en (\\S+) à (.+)",
 "{1} in {2} at {3}"
 ],
