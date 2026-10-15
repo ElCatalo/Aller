@@ -542,7 +542,12 @@
 "ne crée pas le danger par la passe": "creates no danger through passing",
 "Centre et Création": "Crossing and Creation",
 "Réception profondeur/large": "Reception in behind/wide",
-"réception profondeur/large": "reception in behind/wide"
+"réception profondeur/large": "reception in behind/wide",
+"➕ Additionner les postes voisins": "➕ Add up neighbouring positions",
+"Ajoute les joueurs qui n'atteignent 400 minutes à aucun poste mais les atteignent en additionnant deux postes voisins : ailier gauche + droit, latéral gauche + droit, meneur + avant-centre. Leur fiche est classée parmi les autres sans en déplacer aucune. Coupé : la plateforme est exactement celle d'avant.": "Adds players who reach 400 minutes at no single position but do when two neighbouring positions are added up: left + right winger, left + right full-back, attacking midfielder + centre-forward. Their card is ranked among the others without moving any of them. Off: the platform is exactly as before.",
+"ailier gauche et ailier droit": "left winger and right winger",
+"latéral gauche et latéral droit": "left full-back and right full-back",
+"meneur et avant-centre": "attacking midfielder and centre-forward"
 },
 "f": [
 [
@@ -1040,6 +1045,10 @@
 [
 "{0} · {1} · score période {2}",
 "{0} · {1} · period score {2}"
+],
+[
+"➕ Fiche regroupée : {0} additionnés (aucun des deux n'atteint 400 minutes seul). Classée parmi les fiches du poste sans en faire partie ; pas de jeu sous pression ni de carte des touches pour ce regroupement.",
+"➕ Merged card: {0} added up (neither reaches 400 minutes alone). Ranked among the position's cards without being part of them; no play under pressure or touch map for this merge."
 ]
 ],
 "r": [

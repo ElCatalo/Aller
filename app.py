@@ -738,6 +738,17 @@ def _requete(sql: str, params: tuple = ()) -> pd.DataFrame:
 POIDS_DEFAUT = (1.0, 1.0)      # (age, niveau), multiplicateurs des ajustements de la V10
 
 
+def voisins_actifs() -> bool:
+    """Interrupteur « postes voisins » de la barre laterale (14/10/2026)."""
+    return bool(st.session_state.get("voisins", False))
+
+
+def cle_donnees() -> tuple:
+    """Cle de cache des fonctions qui lisent les joueurs : poids de l'age et du
+    niveau, et interrupteur des postes voisins."""
+    return (*poids_courants(), voisins_actifs())
+
+
 def poids_courants() -> tuple[float, float]:
     """(k_age, k_niveau) regles dans la barre laterale, pour cette session."""
     return (st.session_state.get("poids_age", 100) / 100,
@@ -806,10 +817,40 @@ def sql_pondere(sql: str, ka: float, kn: float) -> str:
     return _TABLES_PONDEREES.sub(remplace, sql)
 
 
+# POSTES VOISINS REGROUPES (14/10/2026, Alex). La base contient, pour les joueurs
+# qui n'atteignent 400 minutes a aucun poste mais les atteignent en additionnant
+# deux postes voisins (ailier gauche + droit, lateral gauche + droit, meneur +
+# avant-centre), une fiche « regroupee » (fusion_voisins). Elle est scoree contre
+# le pool sans y entrer : aucun rang des autres joueurs n'en depend. Interrupteur
+# coupe (defaut), les listes lisent v_joueurs_sans_voisins : la plateforme est
+# exactement celle d'avant. Les lectures d'UN joueur (playerId = ?) ne sont pas
+# filtrees : une fiche regroupee ouverte depuis le monitoring ou une shortlist
+# s'affiche toujours.
+_V_JOUEURS = re.compile(r"\b(FROM|JOIN)\s+v_joueurs\b(\s+\w+)?", re.IGNORECASE)
+_LECTURE_JOUEUR = re.compile(r"playerId\s*(=\s*\?|IN\s*\()", re.IGNORECASE)
+
+
+def sql_sans_voisins(sql: str) -> str:
+    if _LECTURE_JOUEUR.search(sql):
+        return sql
+
+    def remplace(m: re.Match) -> str:
+        mot, suite = m.group(1), m.group(2) or ""
+        if suite.strip() and suite.strip().lower() not in _MOTS_SQL | {"as"}:
+            return f"{mot} v_joueurs_sans_voisins{suite}"            # alias deja ecrit
+        if suite.strip().lower() == "as":
+            return f"{mot} v_joueurs_sans_voisins{suite}"
+        return f"{mot} v_joueurs_sans_voisins AS v_joueurs{suite}"
+    return _V_JOUEURS.sub(remplace, sql)
+
+
 def requete(sql: str, params: tuple = ()) -> pd.DataFrame:
     poids = poids_courants()
     if poids != POIDS_DEFAUT:
         sql = sql_pondere(sql, *poids)
+    # Apres la ponderation : ses rangs recalcules portent alors sur la vue filtree.
+    if globals().get("VOISINS_DISPO") and not voisins_actifs():
+        sql = sql_sans_voisins(sql)
     return _requete(sql, params)
 
 
@@ -901,6 +942,18 @@ def noms_piliers(serie: pd.Series, archetypes=None) -> pd.Series:
     return pd.Series([nom_pilier(p, a) for p, a in zip(serie, archetypes)], index=serie.index)
 
 
+# Fiches de postes voisins regroupes (cf. requete).
+POSTES_REGROUPES = {"LEFT_RIGHT_WINGER": "ailier gauche et ailier droit",
+                    "LEFT_RIGHT_WINGBACK_DEFENDER": "latéral gauche et latéral droit",
+                    "ATTACKING_MIDFIELD_CENTER_FORWARD": "meneur et avant-centre"}
+try:
+    VOISINS_DISPO = "fusion_voisins" in _colonnes("v_joueurs") and \
+        "v_joueurs_sans_voisins" in set(connexion().execute(
+            "SELECT table_name FROM information_schema.tables").df()["table_name"])
+except duckdb.Error:
+    VOISINS_DISPO = False
+
+
 def echantillon_reduit(minutes) -> bool:
     """Le joueur a-t-il un profil et un jeu sous pression calcules sur moins de
     MINUTES_FIABLES minutes ? C'est ce qui declenche l'alerte de la fiche."""
@@ -961,6 +1014,13 @@ archetype = st.sidebar.selectbox(
     "Poste / archétype", _OPT_ARCH,
     index=1 if "archetype_sel" not in st.session_state else None,
     key="archetype_sel").split(" — ")[0]
+if VOISINS_DISPO and not MONITORING:
+    st.sidebar.toggle(
+        "➕ Additionner les postes voisins", key="voisins",
+        help="Ajoute les joueurs qui n'atteignent 400 minutes à aucun poste mais les atteignent en "
+             "additionnant deux postes voisins : ailier gauche + droit, latéral gauche + droit, "
+             "meneur + avant-centre. Leur fiche est classée parmi les autres sans en déplacer aucune. "
+             "Coupé : la plateforme est exactement celle d'avant.")
 
 # Monitoring : fenetre de N jours avant la date des donnees (derniere
 # synchronisation du run V10), precalculee pour chaque N de PERIODES.
@@ -1247,7 +1307,7 @@ if recherche and len(recherche.strip()) >= 2 and MONITORING and MON is not None:
                     st.session_state["_archetype_a_appliquer"] = _r.archetype
                     st.rerun()
 elif recherche and len(recherche.strip()) >= 2:
-    _trouves = chercher_partout(recherche.strip(), tuple(saison), poids_courants())
+    _trouves = chercher_partout(recherche.strip(), tuple(saison), cle_donnees())
     with st.sidebar.container(border=True):
         if _trouves.empty:
             st.caption(f"Aucun joueur pour « {recherche} »"
@@ -2695,7 +2755,7 @@ def section_similaires(j, cle: tuple) -> None:
     """Resultat du bouton « Trouver des profils similaires »."""
     arch = cle[4]
     st.markdown(f"#### 🔎 Profils similaires à {j.nom}")
-    sim = profils_similaires(cle, poids_courants())
+    sim = profils_similaires(cle, cle_donnees())
     if sim.empty:
         st.caption("Comparaison impossible : les piliers de ce joueur ne sont pas mesurés.")
         return
@@ -2767,6 +2827,10 @@ def carte_joueur(j, extra=None) -> None:
     # rayures, puis la ligne de contexte -- meme grammaire que les classements.
     st.markdown(f"#### Fiche joueur · {arch}")
     st.markdown(f"## {j.nom}")
+    if j.position in POSTES_REGROUPES:
+        st.caption(f"➕ Fiche regroupée : {POSTES_REGROUPES[j.position]} additionnés (aucun des deux "
+                   "n'atteint 400 minutes seul). Classée parmi les fiches du poste sans en faire partie ; "
+                   "pas de jeu sous pression ni de carte des touches pour ce regroupement.")
     lieu = f"{j.club} · {j.competition}"
     if pd.notna(j.pays):
         lieu += f" ({j.pays}" + (f", D{int(j.niveau)})" if pd.notna(j.niveau) else ")")
@@ -3982,7 +4046,7 @@ with onglet_rcsc:
         else:
             saison_rcsc = st.radio("Saison", _saisons_rcsc, horizontal=True,
                                    key="saison_rcsc")
-            eff = effectif_rcsc(saison_rcsc, poids_courants())
+            eff = effectif_rcsc(saison_rcsc, cle_donnees())
 
             if eff.empty:
                 st.warning(f"Aucun joueur évalué sur {saison_rcsc}.")
@@ -4151,7 +4215,7 @@ for _ong, nom_liste in zip(_onglets, _onglets_noms + ["exclus"]):
                     f"(bouton « ➕ Ajouter à « {nom_liste} » »).")
             continue
 
-        vivant = enrichir_liste(tuple(contenu_df["playerId"].tolist()), SC, poids_courants())
+        vivant = enrichir_liste(tuple(contenu_df["playerId"].tolist()), SC, cle_donnees())
         df = contenu_df.merge(vivant, on="playerId", how="left")
         # Valeurs a jour quand le joueur est encore dans le build, valeurs
         # figees a l'ajout sinon (joueur sorti du perimetre).
