@@ -1165,6 +1165,21 @@ if contrat_dispo():
     CHAMPS += ", contrat_fin, round(contrat_annees,1) AS contrat_annees"
 
 
+@st.cache_data(show_spinner=False)
+def pivot_dispo() -> bool:
+    """La base contient-elle le pivot aerien des avant-centres (Pivot_Aerien_Nine, 15/10/2026) ?"""
+    try:
+        requete("SELECT pivot_score FROM v_joueurs LIMIT 1")
+        return True
+    except duckdb.Error:
+        return False
+
+
+if pivot_dispo():
+    CHAMPS += (", pivot_score, pivot_n, round(pivot_par90,1) AS pivot_par90, pivot_fiabilite, "
+               "pivot_fiabilite_classe")
+
+
 @st.cache_data(ttl=600)
 @st.cache_data(show_spinner=False)
 def pression_dispo() -> bool:
@@ -1633,6 +1648,22 @@ if not MONITORING and pression_dispo():
         help="Filtre de style, descriptif : il ne modifie ni le score ni le classement. "
              "Percentiles calculés par poste sur une centaine de championnats.")
 
+# Pivot aerien (Pivot_Aerien_Nine) : avant-centres seulement. Classement au choix
+# et filtre de fiabilite (nombre de ballons aeriens disputes dans la zone).
+tri_pivot, fiab_pivot = False, "Toutes"
+PIVOT_FIABILITE = {"Toutes": None, "Moyenne ou bonne": "pivot_fiabilite_classe IN ('moyenne', 'bonne')",
+                   "Bonne seulement": "pivot_fiabilite_classe = 'bonne'"}
+if not MONITORING and archetype == "NINE" and pivot_dispo():
+    tri_pivot = st.sidebar.radio(
+        "Classer les avant-centres par", [COURT, "Pivot aérien"], horizontal=True,
+        help="Pivot aérien : ballons aériens joués vers l'avant entre le milieu de notre moitié et la "
+             "surface adverse, dont il est le premier concerné. Gagner le ballon, le garder, être "
+             "précis, faire progresser le jeu, créer le danger. Détail dans la fiche.") == "Pivot aérien"
+    fiab_pivot = st.sidebar.selectbox(
+        "Fiabilité du pivot aérien", list(PIVOT_FIABILITE),
+        help="Bonne = assez de ballons disputés pour une lecture stable ; faible = trop peu, le score "
+             "est ramené vers la moyenne (50).")
+
 # Memes filtres pour les deux onglets ; seuls le volume (saison / periode) et
 # l'age different : le monitoring garde les joueurs sans date de naissance
 # tant que l'age maximum n'est pas regle.
@@ -1675,6 +1706,8 @@ if sans_contrat_depasse:
                  if MONITORING else "(contrat_fin IS NULL OR contrat_fin >= current_date)")
 if PRESSION_FILTRES.get(filtre_pression):
     where.append(PRESSION_FILTRES[filtre_pression])
+if PIVOT_FIABILITE.get(fiab_pivot):
+    where.append(PIVOT_FIABILITE[fiab_pivot])
 _exclus = ids_exclus()
 if masquer_exclus and _exclus:
     where.append(f"playerId NOT IN ({','.join('?' * len(_exclus))})"); params += _exclus
@@ -1706,6 +1739,8 @@ if not MONITORING and not VUE_RCSC and not VUE_PRESSION:
         _extra_select = f", (SELECT round(p.correspondance, 0) {_SOUS_PROFIL}) AS corr_profil"
         _extra_params = [profil_id]
         _ordre = f"corr_profil DESC, {SC} DESC" if tri_profil == "Correspondance" else f"{SC} DESC, corr_profil DESC"
+    if tri_pivot:
+        _ordre = f"pivot_score DESC NULLS LAST, {SC} DESC"
 
     page = page_courante(f"{' AND '.join(where)}|{params}")
 
@@ -2230,6 +2265,93 @@ PRESSION_LIGNES = [
 # Sous cette fidelite (matchs pairs vs impairs, joueurs de 400 a 900 minutes), une
 # mesure de pression n'est pas affichee sur une fiche a echantillon reduit.
 FIDELITE_MIN_REDUIT = 0.20
+
+
+PIVOT_LIGNES = [
+    # (centile, valeur, libelle, format, aide)
+    ("pct_pivot_contact", "pivot_contact", "1er ballon gagné", "{:.0%}",
+     "Part des ballons dont il fait le premier contact (contrôle, tête, remise), duels aériens compris. "
+     "Un ballon touché par un adversaire sans duel n'est compté pour personne."),
+    ("pct_pivot_duel", "pivot_duel", "Duels aériens gagnés", "{:.0%}",
+     "Sur ces seuls ballons, part des duels aériens gagnés (Impect note le duel chez le gagnant)."),
+    ("pct_pivot_conservation", "pivot_conservation", "Conservation après le contact", "{:.0%}",
+     "Ballon gagné : son équipe le garde après son action (coéquipier, faute subie ou tir). Perdu : "
+     "adversaire, sortie, hors-jeu."),
+    ("pct_pivot_precision", "pivot_precision", "Précision des passes", "{:.0%}",
+     "Passes réussies après le contact, remises de la tête comprises."),
+    ("pct_pivot_progression", "pivot_pxt", "Progression (pxT par ballon)", "{:+.4f}",
+     "Menace (pxT Impect) gagnée entre son contact et le coéquipier suivant, par ballon disputé : "
+     "fait-il avancer le jeu quand il remet ou conduit ?"),
+    ("pct_pivot_danger", "pivot_xg10", "Danger créé (xG en 10 s)", "{:.3f}",
+     "xG des tirs de son équipe dans les 10 secondes qui suivent, tant qu'elle a le ballon, par ballon "
+     "disputé (modèle xG maison sur tous les tirs collectés, penalties exclus)."),
+    ("pct_pivot_volume", "pivot_par90", "Ballons aériens par 90", "{:.1f}",
+     "Combien de ces ballons il dispute : est-il une cible ?"),
+]
+
+
+@st.cache_data(show_spinner=False)
+def pivot_fiabilites() -> pd.DataFrame:
+    try:
+        return requete("SELECT * FROM fiabilite_pivot")
+    except duckdb.Error:
+        return pd.DataFrame()
+
+
+def section_pivot(j) -> None:
+    """Bloc « Pivot aérien » des avant-centres : lecture a part, hors score V10."""
+    if getattr(j, "archetype_courant", None) != "NINE" or not pivot_dispo():
+        return
+    try:
+        d = requete("SELECT * FROM fait_pivot WHERE playerId = ? AND iterationId = ?",
+                    (int(j.playerId), int(j.iterationId)))
+    except duckdb.Error:
+        return
+    st.markdown("#### 🎯 Pivot aérien")
+    if d.empty:
+        st.caption("Aucun ballon aérien disputé dans la zone cette saison (ballons joués vers l'avant entre "
+                   "le milieu de notre moitié et la surface adverse).")
+        return
+    d = d.iloc[0]
+    fi = pivot_fiabilites()
+    k = float(fi.loc[fi.mesure == "score", "k"].iloc[0]) if not fi.empty and (fi.mesure == "score").any() else None
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Score pivot", n_(d.pivot_score, "{:.0f}"),
+              help="0-100, 50 = avant-centre moyen. Ramené vers 50 quand l'échantillon est petit.")
+    c2.metric("Ballons disputés", f"{int(d.pivot_n)}",
+              help=f"Sur {int(d.pivot_matchs)} matchs, soit {d.pivot_par_match:.1f} par match.")
+    c3.metric("Par match", n_(d.pivot_par_match, "{:.1f}"))
+    c4.metric("Fiabilité", str(d.pivot_fiabilite_classe).capitalize(),
+              help=(f"Indice {d.pivot_fiabilite:.2f} = n / (n + {k:.0f}). Il faut environ {k:.0f} ballons "
+                    "pour une lecture à moitié fiable (mesuré sur les matchs pairs et impairs)." if k else None))
+    lignes = []
+    for cle_pct, cle_val, libelle, fmt, aide in PIVOT_LIGNES:
+        val = d.get(cle_val)
+        if val is None or pd.isna(val):
+            continue
+        pct = d.get(cle_pct)
+        lignes.append({"indicateur": libelle, "valeur": fmt.format(val),
+                       "percentile": float(pct) if pct is not None and pd.notna(pct) else None, "lecture": aide})
+    st.dataframe(pd.DataFrame(lignes), hide_index=True, width="stretch",
+                 column_config={
+                     "indicateur": st.column_config.TextColumn("Indicateur"),
+                     "valeur": st.column_config.TextColumn("Valeur", width="small"),
+                     "percentile": st.column_config.ProgressColumn(
+                         "Percentile des avant-centres", min_value=0, max_value=100, format="P%.0f"),
+                     "lecture": st.column_config.TextColumn("Comment le lire", width="large")})
+    style = []
+    if d.pivot_gagnes:
+        style.append(f"remise de la tête sur {d.pivot_remise_tete:.0%} des ballons gagnés")
+        if d.pivot_conduites:
+            style.append(f"{int(d.pivot_conduites)} conduite(s) vers l'avant")
+        if d.pivot_tirs_9:
+            style.append(f"{int(d.pivot_tirs_9)} tir(s) directement")
+    if d.pivot_buts10:
+        style.append(f"{int(d.pivot_buts10)} but(s) de son équipe dans les 10 s")
+    st.caption("Style : " + ", ".join(style) + "." if style else "")
+    st.caption(f"Score brut (sans retour vers la moyenne) : {d.pivot_score_brut:.0f}. Centiles parmi les "
+               "avant-centres de la même saison (au moins 15 ballons), toutes ligues confondues : le niveau "
+               "du championnat n'est pas corrigé. Lecture à part, elle n'entre pas dans le score.")
 
 
 def section_pression(j) -> None:
@@ -2976,6 +3098,7 @@ def carte_joueur(j, extra=None) -> None:
             f"tous les joueurs à partir de {MINUTES_PROFILS} minutes.", icon="⚠️")
     section_profils(cle, j.minutes)
     section_pression(j)
+    section_pivot(j)
     section_heatmap(j)
 
     g1, g2 = st.columns([3, 2])
@@ -3492,15 +3615,21 @@ with (onglet_mon if MONITORING else
             st.caption(f"Joueurs **{premier} à {dernier}** sur {total} qui correspondent au profil "
                        f"**{_choix_profil}**, classés par {_tri}. 👉 Clique sur une ligne pour ouvrir la fiche.")
             _colonnes_profil = ["corr_profil"]
+        elif tri_pivot:
+            st.caption(f"Joueurs **{premier} à {dernier}** sur {total}, classés par pivot aérien. "
+                       "👉 Clique sur une ligne pour ouvrir la fiche du joueur.")
+            _colonnes_profil = ["profil_principal"]
         else:
             st.caption(f"Joueurs **{premier} à {dernier}** sur {total}, classés par {lecture.lower()}. "
                        "👉 Clique sur une ligne pour ouvrir la fiche du joueur.")
             _colonnes_profil = ["profil_principal"]
+        _colonnes_pivot = (["pivot_score", "pivot_n", "pivot_par90", "pivot_fiabilite_classe"]
+                           if archetype == "NINE" and "pivot_score" in res else [])
         event = st.dataframe(
             res, hide_index=True, width="stretch", height=430, key=f"tableau_{page}",
             on_select="rerun", selection_mode="single-row",
             column_order=["nom", "club", "competition", "pays", "niveau", "saison",
-                          "score"] + (["role_milieu"] if archetype in ("SIX", "EIGHT") else [])
+                          "score"] + _colonnes_pivot + (["role_milieu"] if archetype in ("SIX", "EIGHT") else [])
                          + _colonnes_profil + [("score_v8" if SC == "qualite_actuelle" else "qualite"),
                           "age", "contrat_fin", "minutes"] + _col_prudence + ["pied_fort", "performance",
                           "aj_niveau",
@@ -3510,6 +3639,18 @@ with (onglet_mon if MONITORING else
                 "contrat_fin": st.column_config.DateColumn(
                     "Fin contrat", format="MM/YYYY",
                     help="Fin de contrat selon Impect. Vide = non renseignée."),
+                "pivot_score": st.column_config.ProgressColumn(
+                    "Pivot aérien", min_value=0, max_value=100, format="%.0f",
+                    help="Score de pivot aérien (0-100, 50 = avant-centre moyen), déjà ramené vers 50 "
+                         "quand il a disputé peu de ballons. Détail dans la fiche."),
+                "pivot_n": st.column_config.NumberColumn(
+                    "Ballons aériens", format="%d",
+                    help="Ballons aériens joués vers l'avant dans la zone, dont il est le premier concerné "
+                         "(gagnés ou perdus en duel), sur la saison."),
+                "pivot_par90": st.column_config.NumberColumn(
+                    "Par 90", format="%.1f", help="Ballons aériens disputés dans la zone par 90 minutes."),
+                "pivot_fiabilite_classe": st.column_config.TextColumn(
+                    "Fiabilité pivot", help="Bonne, moyenne ou faible selon le nombre de ballons disputés."),
                 "prudence": st.column_config.TextColumn(
                     "⚠", width="small",
                     help=f"Moins de {MINUTES_FIABLES} minutes à ce poste : profil RCSC et jeu sous "

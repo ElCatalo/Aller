@@ -551,7 +551,49 @@
 "Milieu d'infiltration": "Box Crasher Midfielder",
 "arrivées sans impact": "arrives without impact",
 "ne participe ni au pressing ni au repli": "neither presses nor tracks back",
-"Pressing et Interventions": "Pressing and Interventions"
+"Pressing et Interventions": "Pressing and Interventions",
+"Classer les avant-centres par": "Rank centre-forwards by",
+"Pivot aérien": "Aerial target play",
+"Pivot aérien : ballons aériens joués vers l'avant entre le milieu de notre moitié et la surface adverse, dont il est le premier concerné. Gagner le ballon, le garder, être précis, faire progresser le jeu, créer le danger. Détail dans la fiche.": "Aerial target play: forward aerial balls landing between the middle of our half and the opposition box, where he is the first player involved. Win the ball, keep it, be accurate, move play forward, create danger. Details in the player card.",
+"Fiabilité du pivot aérien": "Aerial target play reliability",
+"Bonne = assez de ballons disputés pour une lecture stable ; faible = trop peu, le score est ramené vers la moyenne (50).": "Good = enough balls contested for a stable reading; low = too few, the score is pulled towards the average (50).",
+"Toutes": "All",
+"Moyenne ou bonne": "Medium or good",
+"Bonne seulement": "Good only",
+"Score de pivot aérien (0-100, 50 = avant-centre moyen), déjà ramené vers 50 quand il a disputé peu de ballons. Détail dans la fiche.": "Aerial target play score (0-100, 50 = average centre-forward), already pulled towards 50 when he contested few balls. Details in the player card.",
+"Ballons aériens": "Aerial balls",
+"Ballons aériens joués vers l'avant dans la zone, dont il est le premier concerné (gagnés ou perdus en duel), sur la saison.": "Forward aerial balls into the zone where he is the first player involved (won, or lost in a duel), over the season.",
+"Par 90": "Per 90",
+"Ballons aériens disputés dans la zone par 90 minutes.": "Aerial balls contested in the zone per 90 minutes.",
+"Fiabilité pivot": "Target play reliability",
+"Bonne, moyenne ou faible selon le nombre de ballons disputés.": "Good, medium or low depending on the number of balls contested.",
+"bonne": "good",
+"moyenne": "medium",
+"faible": "low",
+"Bonne": "Good",
+"Moyenne": "Medium",
+"Faible": "Low",
+"#### 🎯 Pivot aérien": "#### 🎯 Aerial target play",
+"Aucun ballon aérien disputé dans la zone cette saison (ballons joués vers l'avant entre le milieu de notre moitié et la surface adverse).": "No aerial ball contested in the zone this season (forward balls between the middle of our half and the opposition box).",
+"Score pivot": "Target play score",
+"0-100, 50 = avant-centre moyen. Ramené vers 50 quand l'échantillon est petit.": "0-100, 50 = average centre-forward. Pulled towards 50 when the sample is small.",
+"Ballons disputés": "Balls contested",
+"Par match": "Per match",
+"Percentile des avant-centres": "Centre-forward percentile",
+"1er ballon gagné": "First ball won",
+"Part des ballons dont il fait le premier contact (contrôle, tête, remise), duels aériens compris. Un ballon touché par un adversaire sans duel n'est compté pour personne.": "Share of balls where he makes the first contact (control, header, lay-off), aerial duels included. A ball touched by an opponent without a duel is credited to nobody.",
+"Duels aériens gagnés": "Aerial duels won",
+"Sur ces seuls ballons, part des duels aériens gagnés (Impect note le duel chez le gagnant).": "On these balls only, share of aerial duels won (Impect tags the duel on the winner).",
+"Conservation après le contact": "Retention after contact",
+"Ballon gagné : son équipe le garde après son action (coéquipier, faute subie ou tir). Perdu : adversaire, sortie, hors-jeu.": "Ball won: his team keeps it after his action (teammate, foul won or shot). Lost: opponent, out of play, offside.",
+"Précision des passes": "Pass accuracy",
+"Passes réussies après le contact, remises de la tête comprises.": "Successful passes after contact, headed lay-offs included.",
+"Progression (pxT par ballon)": "Progression (pxT per ball)",
+"Menace (pxT Impect) gagnée entre son contact et le coéquipier suivant, par ballon disputé : fait-il avancer le jeu quand il remet ou conduit ?": "Threat (Impect pxT) gained between his contact and the next teammate, per ball contested: does he move play forward when he lays off or carries?",
+"Danger créé (xG en 10 s)": "Danger created (xG within 10 s)",
+"xG des tirs de son équipe dans les 10 secondes qui suivent, tant qu'elle a le ballon, par ballon disputé (modèle xG maison sur tous les tirs collectés, penalties exclus).": "xG of his team's shots in the next 10 seconds while it keeps the ball, per ball contested (in-house xG model on all collected shots, penalties excluded).",
+"Ballons aériens par 90": "Aerial balls per 90",
+"Combien de ces ballons il dispute : est-il une cible ?": "How many of these balls he contests: is he a target?"
 },
 "f": [
 [
@@ -1053,6 +1095,42 @@
 [
 "➕ Fiche regroupée : {0} additionnés (aucun des deux n'atteint 400 minutes seul). Classée parmi les fiches du poste sans en faire partie ; pas de jeu sous pression ni de carte des touches pour ce regroupement.",
 "➕ Merged card: {0} added up (neither reaches 400 minutes alone). Ranked among the position's cards without being part of them; no play under pressure or touch map for this merge."
+],
+[
+"Joueurs **{0} à {1}** sur {2}, classés par pivot aérien. 👉 Clique sur une ligne pour ouvrir la fiche du joueur.",
+"Players **{0} to {1}** of {2}, ranked by aerial target play. 👉 Click a row to open the player card."
+],
+[
+"Sur {0} matchs, soit {1} par match.",
+"Over {0} matches, i.e. {1} per match."
+],
+[
+"Indice {0} = n / (n + {1}). Il faut environ {2} ballons pour une lecture à moitié fiable (mesuré sur les matchs pairs et impairs).",
+"Index {0} = n / (n + {1}). About {2} balls are needed for a half-reliable reading (measured on odd vs even matches)."
+],
+[
+"Score brut (sans retour vers la moyenne) : {0}. Centiles parmi les avant-centres de la même saison (au moins 15 ballons), toutes ligues confondues : le niveau du championnat n'est pas corrigé. Lecture à part, elle n'entre pas dans le score.",
+"Raw score (no pull towards the average): {0}. Percentiles among centre-forwards of the same season (at least 15 balls), all leagues together: league level is not adjusted. A separate reading, not part of the score."
+],
+[
+"Style : {0}.",
+"Style: {0}."
+],
+[
+"remise de la tête sur {0} des ballons gagnés",
+"headed lay-off on {0} of balls won"
+],
+[
+"{0} conduite(s) vers l'avant",
+"{0} forward carry(ies)"
+],
+[
+"{0} tir(s) directement",
+"{0} direct shot(s)"
+],
+[
+"{0} but(s) de son équipe dans les 10 s",
+"{0} team goal(s) within 10 s"
 ]
 ],
 "r": [
