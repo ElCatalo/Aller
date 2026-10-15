@@ -547,7 +547,11 @@
 "Ajoute les joueurs qui n'atteignent 400 minutes à aucun poste mais les atteignent en additionnant deux postes voisins : ailier gauche + droit, latéral gauche + droit, meneur + avant-centre. Leur fiche est classée parmi les autres sans en déplacer aucune. Coupé : la plateforme est exactement celle d'avant.": "Adds players who reach 400 minutes at no single position but do when two neighbouring positions are added up: left + right winger, left + right full-back, attacking midfielder + centre-forward. Their card is ranked among the others without moving any of them. Off: the platform is exactly as before.",
 "ailier gauche et ailier droit": "left winger and right winger",
 "latéral gauche et latéral droit": "left full-back and right full-back",
-"meneur et avant-centre": "attacking midfielder and centre-forward"
+"meneur et avant-centre": "attacking midfielder and centre-forward",
+"Milieu d'infiltration": "Box Crasher Midfielder",
+"arrivées sans impact": "arrives without impact",
+"ne participe ni au pressing ni au repli": "neither presses nor tracks back",
+"Pressing et Interventions": "Pressing and Interventions"
 },
 "f": [
 [
@@ -1182,9 +1186,19 @@
 "Tient une largeur basse",
 "Vit dans la surface",
 "À l'aise des deux pieds",
-"Collé à la ligne"
+"Collé à la ligne",
+"Attaque la surface",
+"Reste orienté vers le but"
 ],
 "b": [
+[
+"^Reste orienté vers le but",
+"Stays facing goal"
+],
+[
+"^Attaque la surface",
+"Attacks the box"
+],
 [
 "^Collé à la ligne",
 "Hugs the touchline"
