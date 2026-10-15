@@ -1236,7 +1236,7 @@ else:
     # joueurs du profil par la lecture choisie, la correspondance reste affichee.
     tri_profil = st.sidebar.radio("Classer les joueurs du profil par", [COURT, "Correspondance"],
                                   horizontal=True, disabled=profil_id is None)
-    saison = st.sidebar.multiselect("Saison", saisons, default=[s for s in saisons if s in ("25/26", "2026")])
+    saison = st.sidebar.multiselect("Saison", saisons, default=[s for s in saisons if s in ("26/27", "2026")])
 recherche = st.sidebar.text_input(
     "Recherche par nom", placeholder="ex. Beitia",
     help="Cherche dans TOUS les postes. Les résultats s'affichent juste en dessous : "
