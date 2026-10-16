@@ -1658,7 +1658,8 @@ if not MONITORING and archetype == "NINE" and pivot_dispo():
         "Classer les avant-centres par", [COURT, "Pivot aérien"], horizontal=True,
         help="Pivot aérien : ballons aériens joués vers l'avant entre le milieu de notre moitié et la "
              "surface adverse, dont il est le premier concerné. Gagner le ballon, le garder, être "
-             "précis, faire progresser le jeu, créer le danger. Détail dans la fiche.") == "Pivot aérien"
+             "précis, faire progresser le jeu, créer le danger. Score en bêta, encore en validation. "
+             "Détail dans la fiche.") == "Pivot aérien"
     fiab_pivot = st.sidebar.selectbox(
         "Fiabilité du pivot aérien", list(PIVOT_FIABILITE),
         help="Bonne = assez de ballons disputés pour une lecture stable ; faible = trop peu, le score "
@@ -2307,7 +2308,9 @@ def section_pivot(j) -> None:
                     (int(j.playerId), int(j.iterationId)))
     except duckdb.Error:
         return
-    st.markdown("#### 🎯 Pivot aérien")
+    st.markdown("#### 🎯 Pivot aérien · bêta")
+    st.info("**Score en bêta** : méthode encore en validation (fiabilité modeste, niveau du championnat non "
+            "corrigé). À lire comme une indication, pas comme un verdict.", icon="🧪")
     if d.empty:
         st.caption("Aucun ballon aérien disputé dans la zone cette saison (ballons joués vers l'avant entre "
                    "le milieu de notre moitié et la surface adverse).")
@@ -3616,7 +3619,7 @@ with (onglet_mon if MONITORING else
                        f"**{_choix_profil}**, classés par {_tri}. 👉 Clique sur une ligne pour ouvrir la fiche.")
             _colonnes_profil = ["corr_profil"]
         elif tri_pivot:
-            st.caption(f"Joueurs **{premier} à {dernier}** sur {total}, classés par pivot aérien. "
+            st.caption(f"Joueurs **{premier} à {dernier}** sur {total}, classés par pivot aérien (score en bêta). "
                        "👉 Clique sur une ligne pour ouvrir la fiche du joueur.")
             _colonnes_profil = ["profil_principal"]
         else:
@@ -3628,10 +3631,10 @@ with (onglet_mon if MONITORING else
         event = st.dataframe(
             res, hide_index=True, width="stretch", height=430, key=f"tableau_{page}",
             on_select="rerun", selection_mode="single-row",
-            column_order=["nom", "club", "competition", "pays", "niveau", "saison",
+            column_order=["nom", "age", "club", "competition", "pays", "niveau", "saison",
                           "score"] + _colonnes_pivot + (["role_milieu"] if archetype in ("SIX", "EIGHT") else [])
                          + _colonnes_profil + [("score_v8" if SC == "qualite_actuelle" else "qualite"),
-                          "age", "contrat_fin", "minutes"] + _col_prudence + ["pied_fort", "performance",
+                          "contrat_fin", "minutes"] + _col_prudence + ["pied_fort", "performance",
                           "aj_niveau",
                           "aj_age", "aj_traduction", "progression", "gros_matchs", "coef_adv",
                           "rang_mondial"],
@@ -3640,7 +3643,7 @@ with (onglet_mon if MONITORING else
                     "Fin contrat", format="MM/YYYY",
                     help="Fin de contrat selon Impect. Vide = non renseignée."),
                 "pivot_score": st.column_config.ProgressColumn(
-                    "Pivot aérien", min_value=0, max_value=100, format="%.0f",
+                    "Pivot aérien (bêta)", min_value=0, max_value=100, format="%.0f",
                     help="Score de pivot aérien (0-100, 50 = avant-centre moyen), déjà ramené vers 50 "
                          "quand il a disputé peu de ballons. Détail dans la fiche."),
                 "pivot_n": st.column_config.NumberColumn(

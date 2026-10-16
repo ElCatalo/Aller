@@ -573,7 +573,6 @@
 "Bonne": "Good",
 "Moyenne": "Medium",
 "Faible": "Low",
-"#### 🎯 Pivot aérien": "#### 🎯 Aerial target play",
 "Aucun ballon aérien disputé dans la zone cette saison (ballons joués vers l'avant entre le milieu de notre moitié et la surface adverse).": "No aerial ball contested in the zone this season (forward balls between the middle of our half and the opposition box).",
 "Score pivot": "Target play score",
 "0-100, 50 = avant-centre moyen. Ramené vers 50 quand l'échantillon est petit.": "0-100, 50 = average centre-forward. Pulled towards 50 when the sample is small.",
@@ -593,7 +592,11 @@
 "Danger créé (xG en 10 s)": "Danger created (xG within 10 s)",
 "xG des tirs de son équipe dans les 10 secondes qui suivent, tant qu'elle a le ballon, par ballon disputé (modèle xG maison sur tous les tirs collectés, penalties exclus).": "xG of his team's shots in the next 10 seconds while it keeps the ball, per ball contested (in-house xG model on all collected shots, penalties excluded).",
 "Ballons aériens par 90": "Aerial balls per 90",
-"Combien de ces ballons il dispute : est-il une cible ?": "How many of these balls he contests: is he a target?"
+"Combien de ces ballons il dispute : est-il une cible ?": "How many of these balls he contests: is he a target?",
+"#### 🎯 Pivot aérien · bêta": "#### 🎯 Aerial target play · beta",
+"**Score en bêta** : méthode encore en validation (fiabilité modeste, niveau du championnat non corrigé). À lire comme une indication, pas comme un verdict.": "**Beta score**: method still being validated (modest reliability, league level not adjusted). Read it as an indication, not a verdict.",
+"Pivot aérien (bêta)": "Aerial target play (beta)",
+"Pivot aérien : ballons aériens joués vers l'avant entre le milieu de notre moitié et la surface adverse, dont il est le premier concerné. Gagner le ballon, le garder, être précis, faire progresser le jeu, créer le danger. Score en bêta, encore en validation. Détail dans la fiche.": "Aerial target play: forward aerial balls landing between the middle of our half and the opposition box, where he is the first player involved. Win the ball, keep it, be accurate, move play forward, create danger. Beta score, still being validated. Details in the player card."
 },
 "f": [
 [
@@ -1097,8 +1100,8 @@
 "➕ Merged card: {0} added up (neither reaches 400 minutes alone). Ranked among the position's cards without being part of them; no play under pressure or touch map for this merge."
 ],
 [
-"Joueurs **{0} à {1}** sur {2}, classés par pivot aérien. 👉 Clique sur une ligne pour ouvrir la fiche du joueur.",
-"Players **{0} to {1}** of {2}, ranked by aerial target play. 👉 Click a row to open the player card."
+"Joueurs **{0} à {1}** sur {2}, classés par pivot aérien (score en bêta). 👉 Clique sur une ligne pour ouvrir la fiche du joueur.",
+"Players **{0} to {1}** of {2}, ranked by aerial target play (beta score). 👉 Click a row to open the player card."
 ],
 [
 "Sur {0} matchs, soit {1} par match.",
