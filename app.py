@@ -2309,8 +2309,6 @@ def section_pivot(j) -> None:
     except duckdb.Error:
         return
     st.markdown("#### 🎯 Pivot aérien · bêta")
-    st.info("**Score en bêta** : méthode encore en validation (fiabilité modeste, niveau du championnat non "
-            "corrigé). À lire comme une indication, pas comme un verdict.", icon="🧪")
     if d.empty:
         st.caption("Aucun ballon aérien disputé dans la zone cette saison (ballons joués vers l'avant entre "
                    "le milieu de notre moitié et la surface adverse).")
