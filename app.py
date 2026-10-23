@@ -943,6 +943,41 @@ def nom_pilier(p, archetype=None) -> str:
             or p.replace("_", " "))
 
 
+_LIB_METRIQUES_F = _ICI / "libelles_metriques.json"
+_LIB_METRIQUES = json.loads(_LIB_METRIQUES_F.read_text(encoding="utf-8")) if _LIB_METRIQUES_F.exists() else {}
+
+
+def detail_pilier(cle: tuple, arch, choix) -> None:
+    """Metriques derriere un pilier de la fiche (23/10/2026) : valeur brute de la saison et
+    centile = Phi(z), z etant le score normal V10 deja oriente (100 = meilleur)."""
+    if not choix:
+        st.caption("Clique sur une barre pour voir les métriques du pilier (valeur brute et centile).")
+        return
+    met = requete("""SELECT metrique, pilier, valeur_brute, z, poids_dans_pilier, plus_haut_est_mieux
+        FROM fait_metrique WHERE playerId=? AND squadId=? AND iterationId=? AND position=? AND archetype=?""", cle)
+    noms = noms_piliers(met["pilier"], arch)
+    met = met[(noms == choix) | (noms.map(tr) == choix)]
+    if met.empty:
+        st.caption("Pas de métrique enregistrée pour ce pilier (piliers physiques ou de profil).")
+        return
+    from statistics import NormalDist
+    phi = NormalDist().cdf
+    tot = met["poids_dans_pilier"].sum() or 1
+    vue = pd.DataFrame({
+        "métrique": [m if anglais() else _LIB_METRIQUES.get(m, m) for m in met["metrique"]],
+        "valeur brute": met["valeur_brute"].round(3).to_numpy(),
+        "centile": [round(phi(z) * 100) if pd.notna(z) else None for z in met["z"]],
+        "poids": (met["poids_dans_pilier"] / tot * 100).round(0).to_numpy(),
+        "sens": ["↑ plus haut = mieux" if h else "↓ plus bas = mieux" for h in met["plus_haut_est_mieux"]],
+    }).sort_values("poids", ascending=False)
+    st.markdown(f"**{choix}** — métriques du pilier")
+    st.dataframe(vue, hide_index=True, width="stretch", column_config={
+        "centile": st.column_config.ProgressColumn("centile", min_value=0, max_value=100, format="%d"),
+        "poids": st.column_config.NumberColumn("poids", format="%d %%")})
+    st.caption("Centile : rang dans le pool de référence du poste (plateforme V10), 100 = meilleur, "
+               "déjà inversé quand une valeur basse est meilleure. Valeur brute : saison, par 90 min ou ratio, comme Impect.")
+
+
 def noms_piliers(serie: pd.Series, archetypes=None) -> pd.Series:
     """nom_pilier sur une colonne ; archetypes = une valeur ou une colonne alignee."""
     if archetypes is None or isinstance(archetypes, str):
@@ -3126,7 +3161,13 @@ def carte_joueur(j, extra=None) -> None:
                           yaxis=dict(autorange="reversed"),
                           title="Piliers — survol : poids dans le score")
         fig.add_vline(x=50, line_dash="dot", line_color="#999")
-        st.plotly_chart(fig, width="stretch", key=f"fig_{cle}")
+        # 23/10/2026 : clic sur une barre -> les metriques du pilier (valeur brute et centile)
+        ev = st.plotly_chart(fig, width="stretch", key=f"fig_{cle}", on_select="rerun", selection_mode="points")
+        try:
+            pts = ev.selection.points if ev else []
+        except AttributeError:
+            pts = []
+        detail_pilier(cle, arch, pts[0].get("y") if pts else None)
 
     with g2:
         st.markdown("**Contexte de match**")

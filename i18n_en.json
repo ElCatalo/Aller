@@ -595,7 +595,17 @@
 "Combien de ces ballons il dispute : est-il une cible ?": "How many of these balls he contests: is he a target?",
 "#### 🎯 Pivot aérien · bêta": "#### 🎯 Aerial target play · beta",
 "Pivot aérien (bêta)": "Aerial target play (beta)",
-"Pivot aérien : ballons aériens joués vers l'avant entre le milieu de notre moitié et la surface adverse, dont il est le premier concerné. Gagner le ballon, le garder, être précis, faire progresser le jeu, créer le danger. Score en bêta, encore en validation. Détail dans la fiche.": "Aerial target play: forward aerial balls landing between the middle of our half and the opposition box, where he is the first player involved. Win the ball, keep it, be accurate, move play forward, create danger. Beta score, still being validated. Details in the player card."
+"Pivot aérien : ballons aériens joués vers l'avant entre le milieu de notre moitié et la surface adverse, dont il est le premier concerné. Gagner le ballon, le garder, être précis, faire progresser le jeu, créer le danger. Score en bêta, encore en validation. Détail dans la fiche.": "Aerial target play: forward aerial balls landing between the middle of our half and the opposition box, where he is the first player involved. Win the ball, keep it, be accurate, move play forward, create danger. Beta score, still being validated. Details in the player card.",
+"Clique sur une barre pour voir les métriques du pilier (valeur brute et centile).": "Click a bar to see the pillar's metrics (raw value and percentile).",
+"Pas de métrique enregistrée pour ce pilier (piliers physiques ou de profil).": "No metric stored for this pillar (physical or profile pillars).",
+"métrique": "metric",
+"valeur brute": "raw value",
+"centile": "percentile",
+"poids": "weight",
+"sens": "direction",
+"↑ plus haut = mieux": "↑ higher = better",
+"↓ plus bas = mieux": "↓ lower = better",
+"Centile : rang dans le pool de référence du poste (plateforme V10), 100 = meilleur, déjà inversé quand une valeur basse est meilleure. Valeur brute : saison, par 90 min ou ratio, comme Impect.": "Percentile: rank in the position's reference pool (V10 platform), 100 = best, already inverted when a lower value is better. Raw value: season, per 90 min or ratio, as in Impect."
 },
 "f": [
 [
@@ -1133,6 +1143,10 @@
 [
 "{0} but(s) de son équipe dans les 10 s",
 "{0} team goal(s) within 10 s"
+],
+[
+"**{0}** — métriques du pilier",
+"**{0}** — pillar metrics"
 ]
 ],
 "r": [
