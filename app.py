@@ -701,6 +701,14 @@ def connexion():
         st.error(f"Base introuvable : {DB}\n\nLance d'abord : python impect-scouting/db_build.py")
         st.stop()
     con = duckdb.connect(str(DB), read_only=True)
+    # Base en ligne decoupee (decoupe_base.py) : archives des saisons terminees a
+    # cote de la base, attachees sous arch_<annee> comme l'attendent ses vues.
+    # En local la base est entiere : aucun fichier ne correspond, rien n'est attache.
+    for f in sorted(DB.parent.glob("charleroi_scouting_*.duckdb")):
+        try:
+            con.execute(f"ATTACH '{str(f).replace(chr(39), chr(39) * 2)}' AS arch_{f.stem.rsplit('_', 1)[-1]} (READ_ONLY)")
+        except duckdb.Error:
+            pass
     # Tables du monitoring sous le prefixe "mon." : elles se joignent ainsi
     # directement aux tables de saison (fiche, score de saison).
     if MON_DB is not None:
