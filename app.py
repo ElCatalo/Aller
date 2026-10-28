@@ -4145,14 +4145,22 @@ def vue_pression() -> None:
                 "% passes pressées", format="%.0f", help="Part de ses passes faites sous forte pression."),
         })
     choix = ev.selection["rows"] if ev and "rows" in ev.selection else []
-    if choix:
-        c = vue.iloc[choix[0]]
-        if st.button(f"Ouvrir la fiche de {c.nom} ({c.saison}, {c.club})", key="pr_ouvrir", type="primary"):
-            st.session_state["_archetype_a_appliquer"] = c.archetype
-            ouvrir_fiche(int(c.playerId), int(c.squadId), int(c.iterationId), c.position, c.archetype)
     st.download_button("Télécharger le classement affiché (CSV)",
                        en_csv(vue[[c for c in vue.columns if not c.startswith("pc_")]]),
                        f"pression_{pos}_{jeu}.csv", "text/csv")
+    # 28/10/2026 (Alex) : la fiche s'ouvre sous le tableau, comme dans Scouting et
+    # Monitoring. Avant, un clic menait a une autre vue et le retour remettait les
+    # filtres par defaut.
+    if choix:
+        c = vue.iloc[choix[0]]
+        st.divider()
+        fiche_pr = requete(f"""SELECT {CHAMPS} FROM v_joueurs
+            WHERE playerId=? AND squadId=? AND iterationId=? AND position=? AND archetype=?""",
+                           (int(c.playerId), int(c.squadId), int(c.iterationId), c.position, c.archetype))
+        if fiche_pr.empty:
+            st.info("Pas de fiche de saison pour ce joueur à ce poste.")
+        else:
+            carte_joueur(fiche_pr.iloc[0])
 
     # ---- Les meilleurs, metrique par metrique
     st.markdown("##### Les meilleurs sur chaque métrique")

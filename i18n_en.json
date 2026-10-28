@@ -605,7 +605,8 @@
 "sens": "direction",
 "↑ plus haut = mieux": "↑ higher = better",
 "↓ plus bas = mieux": "↓ lower = better",
-"Centile : rang dans le pool de référence du poste (plateforme V10), 100 = meilleur, déjà inversé quand une valeur basse est meilleure. Valeur brute : saison, par 90 min ou ratio, comme Impect.": "Percentile: rank in the position's reference pool (V10 platform), 100 = best, already inverted when a lower value is better. Raw value: season, per 90 min or ratio, as in Impect."
+"Centile : rang dans le pool de référence du poste (plateforme V10), 100 = meilleur, déjà inversé quand une valeur basse est meilleure. Valeur brute : saison, par 90 min ou ratio, comme Impect.": "Percentile: rank in the position's reference pool (V10 platform), 100 = best, already inverted when a lower value is better. Raw value: season, per 90 min or ratio, as in Impect.",
+"Pas de fiche de saison pour ce joueur à ce poste.": "No season card for this player at this position."
 },
 "f": [
 [
