@@ -4300,6 +4300,11 @@ def _vue_jeunes() -> None:
           AND iterationId IN ({marques})
         ORDER BY {JEUNES_TRI[tri]} DESC NULLS LAST""", (arch, int(min_min), float(age_max), *ids))
     v = v.merge(ed[["iterationId", "date_debut", "date_fin"]], on="iterationId", how="left")
+    # Club actuel : saison de championnat la plus recente du joueur, toutes minutes (db_build.clubs_actuels).
+    try:
+        v = v.merge(requete("SELECT playerId, club_actuel, championnat_actuel FROM club_actuel"), on="playerId", how="left")
+    except duckdb.Error:
+        v["club_actuel"], v["championnat_actuel"] = None, None
     v.insert(0, "rang", np.arange(1, len(v) + 1))
     c1, c2, c3 = st.columns(3)
     c1.metric("Joueurs", f"{v['playerId'].nunique():,}".replace(",", " "))
@@ -4311,11 +4316,16 @@ def _vue_jeunes() -> None:
     ev = st.dataframe(
         v, hide_index=True, width="stretch", height=430, key=f"jn_tbl_{arch}_{tri}",
         on_select="rerun", selection_mode="single-row",
-        column_order=["rang", "nom", "club", "competition", "saison", "age", "minutes", "matchs",
+        column_order=["rang", "nom", "club_actuel", "championnat_actuel", "club", "competition", "saison", "age",
+                      "minutes", "matchs",
                       "score_v8", "performance", "aj_age", "pilier_fort", "pilier_faible", "pied_fort",
                       "taille_cm", "date_debut", "date_fin"],
         column_config={
             "rang": st.column_config.NumberColumn("Rang", format="%d"),
+            "club_actuel": st.column_config.TextColumn(
+                "Club actuel", help="Club de sa saison de championnat la plus récente chez Impect (vide : aucun "
+                                    "championnat suivi)."),
+            "championnat_actuel": st.column_config.TextColumn("Championnat"),
             "club": st.column_config.TextColumn("Sélection"),
             "competition": st.column_config.TextColumn("Compétition"),
             "saison": st.column_config.TextColumn("Édition"),

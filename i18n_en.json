@@ -624,7 +624,10 @@
 "50 = joueur médian du poste en championnat.": "50 = median league player at the position.",
 "Début": "Start",
 "Fin": "End",
-"Télécharger le classement (CSV)": "Download the ranking (CSV)"
+"Télécharger le classement (CSV)": "Download the ranking (CSV)",
+"Club actuel": "Current club",
+"Club de sa saison de championnat la plus récente dans la base (vide : jamais 400 minutes en championnat).": "Club of his most recent league season in the database (empty: never 400 league minutes).",
+"Club de sa saison de championnat la plus récente chez Impect (vide : aucun championnat suivi).": "Club of his most recent league season in Impect (empty: no tracked league)."
 },
 "f": [
 [
