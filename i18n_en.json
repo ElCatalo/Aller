@@ -627,7 +627,12 @@
 "Télécharger le classement (CSV)": "Download the ranking (CSV)",
 "Club actuel": "Current club",
 "Club de sa saison de championnat la plus récente dans la base (vide : jamais 400 minutes en championnat).": "Club of his most recent league season in the database (empty: never 400 league minutes).",
-"Club de sa saison de championnat la plus récente chez Impect (vide : aucun championnat suivi).": "Club of his most recent league season in Impect (empty: no tracked league)."
+"Club de sa saison de championnat la plus récente chez Impect (vide : aucun championnat suivi).": "Club of his most recent league season in Impect (empty: no tracked league).",
+"##### 🗓️ Ses matchs dans ce tournoi": "##### 🗓️ His matches in this tournament",
+"Aucun match détaillé à ce poste dans ce tournoi.": "No detailed match at this position in this tournament.",
+"Chaque barre = un match, scoré seul contre la référence de saison (couleur = niveau de l'adversaire : tiers des adversaires du tournoi selon le rating Impect). Un match isolé est très bruité : c'est la série qui compte. La ligne pleine est sa performance sur tout le tournoi.": "Each bar = one match, scored alone against the season reference (colour = opponent level: tier of the tournament's opponents by Impect rating). A single match is very noisy: the series is what counts. The solid line is his performance over the whole tournament.",
+"Adversaire": "Opponent",
+"Chaque barre = un match, scoré seul contre la référence de saison. Impect ne note pas les sélections jeunes : pas de niveau d'adversaire ni d'ajustement selon l'adversaire. Un match isolé est très bruité : c'est la série qui compte. La ligne pleine est sa performance sur tout le tournoi.": "Each bar = one match, scored alone against the season reference. Impect does not rate youth national teams: no opponent level and no opponent adjustment. A single match is very noisy: the series is what counts. The solid line is his performance over the whole tournament."
 },
 "f": [
 [

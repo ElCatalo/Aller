@@ -28,6 +28,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import plotly.io as pio
 import streamlit as st
+from types import SimpleNamespace
 
 _ICI = Path(__file__).resolve().parent
 # A cote de app.py une fois deployee, a la racine du projet en local.
@@ -4349,7 +4350,37 @@ def _vue_jeunes() -> None:
     choix = ev.selection["rows"] if ev and "rows" in ev.selection else []
     if choix:
         st.divider()
-        carte_joueur(v.iloc[choix[0]])
+        j = v.iloc[choix[0]]
+        carte_joueur(j, extra=lambda: section_matchs_jeunes(j))
+
+
+def section_matchs_jeunes(j) -> None:
+    """Matchs du joueur dans le tournoi (base jeunes, table jeunes_match) : adversaire et niveau de chaque
+    match, comme le bloc « Niveau de chaque match » du Monitoring."""
+    try:
+        m = requete("""SELECT * FROM jeunes_match WHERE playerId=? AND squadId=? AND iterationId=? AND archetype=?
+            ORDER BY date""", (int(j.playerId), int(j.squadId), int(j.iterationId), j.archetype_courant))
+    except duckdb.Error:
+        return
+    st.markdown("##### 🗓️ Ses matchs dans ce tournoi")
+    if m.empty:
+        st.caption("Aucun match détaillé à ce poste dans ce tournoi.")
+        return
+    st.plotly_chart(graphe_matchs(m, SimpleNamespace(perf_brute=np.nan, performance=j.performance)),
+                    width="stretch", key=f"jn_matchs_{j.playerId}_{j.iterationId}_{j.archetype_courant}")
+    st.caption("Chaque barre = un match, scoré seul contre la référence de saison. Impect ne note pas les "
+               "sélections jeunes : pas de niveau d'adversaire ni d'ajustement selon l'adversaire. Un match isolé "
+               "est très bruité : c'est la série qui compte. La ligne pleine est sa performance sur tout le tournoi.")
+    vue = m.assign(date=pd.to_datetime(m["date"]).dt.strftime("%d/%m/%Y"),
+                   palier=m["palier"].map(LIBELLE_PALIER), niveau=m["niveau"].round(0),
+                   opp_rating=m["opp_rating"].round(3))
+    st.dataframe(vue, hide_index=True, width="stretch",
+                 column_order=["date", "adversaire", "minutes", "position", "niveau"],
+                 column_config={"adversaire": st.column_config.TextColumn("Adversaire"),
+                                "opp_rating": st.column_config.NumberColumn("Rating adverse"),
+                                "palier": st.column_config.TextColumn("Niveau de l'adversaire"),
+                                "minutes": st.column_config.NumberColumn("Min", format="%d"),
+                                "niveau": st.column_config.NumberColumn("Niveau du match")})
 
 
 with onglet_jeunes:
