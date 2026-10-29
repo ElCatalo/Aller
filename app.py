@@ -38,6 +38,10 @@ DB = next((p for p in (_ICI / "charleroi_scouting.duckdb",
 # separee de la base de scoring, qui frole la limite de 100 Mo de GitHub.
 MON_DB = next((p for p in (_ICI / "charleroi_monitoring.duckdb",
                            _ICI.parent / "charleroi_monitoring.duckdb") if p.exists()), None)
+# Competitions internationales jeunes (db_build.py -> construire_base_jeunes) :
+# meme schema que la base principale, lue par l'onglet « Jeunes internationaux ».
+JEUNES_DB = next((p for p in (_ICI / "charleroi_jeunes.duckdb",
+                              _ICI.parent / "charleroi_jeunes.duckdb") if p.exists()), None)
 ARCHETYPES = {"GK": "Gardien", "CB": "Défenseur central", "FB": "Latéral", "WG": "Ailier",
               "SIX": "Milieu défensif (6)", "EIGHT": "Milieu relayeur (8)",
               "TEN": "Meneur offensif (10)", "NINE": "Avant-centre (9)"}
@@ -352,7 +356,8 @@ def _i18n_installer() -> None:
     DeltaGenerator._i18n_pose = True
 
 
-ONGLETS = ["Scouting saison", "Monitoring", "Jeu sous pression", "Sporting de Charleroi"]
+ONGLETS = ["Scouting saison", "Monitoring", "Jeu sous pression", "Jeunes internationaux",
+           "Sporting de Charleroi"]
 
 
 def _i18n_basculer() -> None:
@@ -688,7 +693,7 @@ def _bases_vues() -> dict:
 
 
 _signature_bases = tuple((f.name, f.stat().st_mtime_ns, f.stat().st_size)
-                         for f in (DB, MON_DB) if f is not None and f.exists())
+                         for f in (DB, MON_DB, JEUNES_DB) if f is not None and f.exists())
 if _bases_vues()["signature"] not in (None, _signature_bases):
     st.cache_data.clear()
     st.cache_resource.clear()
@@ -719,9 +724,20 @@ def connexion():
     return con
 
 
+@st.cache_resource
+def connexion_jeunes():
+    return duckdb.connect(str(JEUNES_DB), read_only=True)
+
+
+# Base lue par requete() : la principale, ou celle des jeunes le temps de dessiner
+# l'onglet « Jeunes internationaux » (la fiche joueur s'y lit alors telle quelle).
+BASE_JEUNES = False
+
+
 @st.cache_data(ttl=600)
-def _requete(sql: str, params: tuple = ()) -> pd.DataFrame:
-    return connexion().execute(sql, params).df()
+def _requete(sql: str, params: tuple = (), base: str = "principale") -> pd.DataFrame:
+    con = connexion_jeunes() if base == "jeunes" else connexion()
+    return con.execute(sql, params).df()
 
 
 # ------------------------------------------------ poids de l'age et du niveau
@@ -859,7 +875,7 @@ def requete(sql: str, params: tuple = ()) -> pd.DataFrame:
     # Apres la ponderation : ses rangs recalcules portent alors sur la vue filtree.
     if globals().get("VOISINS_DISPO") and not voisins_actifs():
         sql = sql_sans_voisins(sql)
-    return _requete(sql, params)
+    return _requete(sql, params, "jeunes" if BASE_JEUNES and JEUNES_DB is not None else "principale")
 
 
 # ----------------------------------------------------------------- exports
@@ -1018,12 +1034,14 @@ MON = params_monitoring()
 # ----------------------------------------------------------------- onglets
 # Onglets a execution paresseuse : seul l'onglet ouvert calcule sa page, et la
 # barre laterale s'adapte (periode et minutes sur la periode en Monitoring).
-onglet_saison, onglet_mon, onglet_pression, onglet_rcsc = st.tabs(
+onglet_saison, onglet_mon, onglet_pression, onglet_jeunes, onglet_rcsc = st.tabs(
     ONGLETS, key="onglet", on_change="rerun")
 MONITORING = bool(onglet_mon.open)
 # Onglet « Jeu sous pression » : classements des metriques de l'etude de pression.
 # Comme l'onglet maison, il a ses propres filtres et n'utilise pas le classement.
 VUE_PRESSION = bool(onglet_pression.open)
+# Onglet « Jeunes internationaux » (29/10/2026) : ses propres filtres, sa propre base.
+VUE_JEUNES = bool(onglet_jeunes.open)
 # Onglet maison : effectif du RSC Charleroi et equipe type. Il n'utilise aucun
 # des filtres de la barre laterale (poste, championnat, minutes...), on evite
 # donc la grosse requete de classement quand il est ouvert.
@@ -1770,7 +1788,7 @@ def page_courante(filtre: str) -> int:
     return st.session_state.get("page", 0)
 
 
-if not MONITORING and not VUE_RCSC and not VUE_PRESSION:
+if not MONITORING and not VUE_RCSC and not VUE_PRESSION and not VUE_JEUNES:
     # Profil RCSC : meme joueur-saison, meme pool. Plus de verdict : filtre sur
     # le score de correspondance lui-meme (cf. profils_rcsc.py).
     _SOUS_PROFIL = """FROM fait_profil p WHERE p.playerId = v_joueurs.playerId AND p.squadId = v_joueurs.squadId
@@ -3629,7 +3647,7 @@ with (onglet_mon if MONITORING else
     elif MONITORING:
         vue_monitoring()
 
-    elif VUE_RCSC or VUE_PRESSION:
+    elif VUE_RCSC or VUE_PRESSION or VUE_JEUNES:
         # L'onglet maison se dessine dans son propre bloc plus bas : ici on ne
         # fait rien, surtout pas le classement (ses donnees ne sont meme pas
         # calculees quand cet onglet est ouvert).
@@ -4227,6 +4245,106 @@ def vue_pression() -> None:
 with onglet_pression:
     if VUE_PRESSION and not fiche_param and not club_param:
         vue_pression()
+
+
+# ============================================================ jeunes internationaux
+# 29/10/2026 (Alex) : comme Scouting saison, pour les competitions internationales
+# jeunes (U17 a U21, JO). Une fiche par joueur et par tournoi, des 90 minutes au
+# poste. Score = performance + age, SANS ajustement de niveau (le niveau d'une
+# selection ne se compare pas a celui d'un club) ; references de score figees sur
+# les championnats. Le calendrier garde les tournois joues dans la periode.
+JEUNES_TRI = {"Score (performance + âge)": "score", "Performance": "score_performance"}
+
+
+def vue_jeunes() -> None:
+    global BASE_JEUNES
+    st.markdown("#### Compétitions internationales jeunes")
+    st.title("Jeunes internationaux")
+    rayures(fine=True)
+    if JEUNES_DB is None:
+        st.warning("La base des compétitions jeunes n'est pas encore construite (prochain cycle).")
+        return
+    BASE_JEUNES = True
+    try:
+        _vue_jeunes()
+    finally:
+        BASE_JEUNES = False
+
+
+def _vue_jeunes() -> None:
+    ed = requete("SELECT iterationId, competition, season, date_debut, date_fin FROM dim_saison")
+    ed["date_debut"] = pd.to_datetime(ed["date_debut"]).dt.date
+    ed["date_fin"] = pd.to_datetime(ed["date_fin"]).dt.date
+    f1, f2, f3 = st.columns([2, 3, 3])
+    arch = f1.selectbox("Poste", list(ARCHETYPES), format_func=ARCHETYPES.get, key="jn_arch")
+    comps = sorted(ed["competition"].dropna().unique())
+    choix_c = f2.multiselect("Compétitions", comps, default=comps, key="jn_comp")
+    d0 = ed["date_debut"].min() or pd.Timestamp("2025-01-01").date()
+    d1 = ed["date_fin"].max() or pd.Timestamp.now().date()
+    periode = f3.date_input("Période (tournois joués entre ces dates)", value=(d0, d1),
+                            min_value=d0, max_value=d1, format="DD/MM/YYYY", key="jn_dates")
+    g1, g2, g3 = st.columns(3)
+    min_min = g1.number_input("Minutes minimum au poste", min_value=90, max_value=2000, value=90,
+                              step=30, key="jn_min")
+    age_max = g2.slider("Âge maximum", 15, 30, 30, key="jn_age")
+    tri = g3.selectbox("Classer par", list(JEUNES_TRI), key="jn_tri")
+    debut, fin = (periode if isinstance(periode, (tuple, list)) and len(periode) == 2 else (d0, d1))
+    ids = ed[(ed["competition"].isin(choix_c)) & (ed["date_fin"] >= debut)
+             & (ed["date_debut"] <= fin)]["iterationId"].astype(int).tolist()
+    if not ids:
+        st.info("Aucun tournoi dans cette période pour ces compétitions.")
+        return
+    marques = ",".join("?" * len(ids))
+    v = requete(f"""SELECT {CHAMPS} FROM v_joueurs
+        WHERE archetype = ? AND minutes_jouees >= ? AND (age_years IS NULL OR age_years <= ?)
+          AND iterationId IN ({marques})
+        ORDER BY {JEUNES_TRI[tri]} DESC NULLS LAST""", (arch, int(min_min), float(age_max), *ids))
+    v = v.merge(ed[["iterationId", "date_debut", "date_fin"]], on="iterationId", how="left")
+    v.insert(0, "rang", np.arange(1, len(v) + 1))
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Joueurs", f"{v['playerId'].nunique():,}".replace(",", " "))
+    c2.metric("Tournois", len(ids))
+    c3.metric("Âge médian", n_(v["age"].median()))
+    st.caption("Score = performance au poste (ajustée selon l'adversaire de chaque match) + âge, sans "
+               "ajustement de niveau. Références de score figées sur les championnats. "
+               "👉 Clique sur une ligne : la fiche s'affiche en dessous.")
+    ev = st.dataframe(
+        v, hide_index=True, width="stretch", height=430, key=f"jn_tbl_{arch}_{tri}",
+        on_select="rerun", selection_mode="single-row",
+        column_order=["rang", "nom", "club", "competition", "saison", "age", "minutes", "matchs",
+                      "score_v8", "performance", "aj_age", "pilier_fort", "pilier_faible", "pied_fort",
+                      "taille_cm", "date_debut", "date_fin"],
+        column_config={
+            "rang": st.column_config.NumberColumn("Rang", format="%d"),
+            "club": st.column_config.TextColumn("Sélection"),
+            "competition": st.column_config.TextColumn("Compétition"),
+            "saison": st.column_config.TextColumn("Édition"),
+            "age": st.column_config.NumberColumn("Âge", format="%.1f"),
+            "minutes": st.column_config.NumberColumn("Min", format="%d"),
+            "matchs": st.column_config.NumberColumn("Matchs", format="%d"),
+            "score_v8": st.column_config.ProgressColumn(
+                "Score", min_value=0, max_value=120, format="%.1f",
+                help="Performance + ajustement d'âge, même échelle que le Score de saison."),
+            "performance": st.column_config.NumberColumn("Performance", format="%.1f",
+                                                         help="50 = joueur médian du poste en championnat."),
+            "aj_age": st.column_config.NumberColumn("Aj. âge", format="%+.1f"),
+            "pilier_fort": st.column_config.TextColumn("Point fort"),
+            "pilier_faible": st.column_config.TextColumn("Point faible"),
+            "pied_fort": st.column_config.TextColumn("Pied"),
+            "taille_cm": st.column_config.NumberColumn("Taille", format="%d"),
+            "date_debut": st.column_config.DateColumn("Début", format="DD/MM/YYYY"),
+            "date_fin": st.column_config.DateColumn("Fin", format="DD/MM/YYYY"),
+        })
+    st.download_button("Télécharger le classement (CSV)", en_csv(v), f"jeunes_{arch}.csv", "text/csv")
+    choix = ev.selection["rows"] if ev and "rows" in ev.selection else []
+    if choix:
+        st.divider()
+        carte_joueur(v.iloc[choix[0]])
+
+
+with onglet_jeunes:
+    if VUE_JEUNES and not fiche_param and not club_param:
+        vue_jeunes()
 
 
 with onglet_rcsc:

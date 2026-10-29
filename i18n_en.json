@@ -606,7 +606,25 @@
 "↑ plus haut = mieux": "↑ higher = better",
 "↓ plus bas = mieux": "↓ lower = better",
 "Centile : rang dans le pool de référence du poste (plateforme V10), 100 = meilleur, déjà inversé quand une valeur basse est meilleure. Valeur brute : saison, par 90 min ou ratio, comme Impect.": "Percentile: rank in the position's reference pool (V10 platform), 100 = best, already inverted when a lower value is better. Raw value: season, per 90 min or ratio, as in Impect.",
-"Pas de fiche de saison pour ce joueur à ce poste.": "No season card for this player at this position."
+"Pas de fiche de saison pour ce joueur à ce poste.": "No season card for this player at this position.",
+"Jeunes internationaux": "Youth internationals",
+"Compétitions internationales jeunes": "International youth competitions",
+"La base des compétitions jeunes n'est pas encore construite (prochain cycle).": "The youth competitions database is not built yet (next cycle).",
+"Compétitions": "Competitions",
+"Période (tournois joués entre ces dates)": "Period (tournaments played between these dates)",
+"Minutes minimum au poste": "Minimum minutes at the position",
+"Score (performance + âge)": "Score (performance + age)",
+"Aucun tournoi dans cette période pour ces compétitions.": "No tournament in this period for these competitions.",
+"Tournois": "Tournaments",
+"Score = performance au poste (ajustée selon l'adversaire de chaque match) + âge, sans ajustement de niveau. Références de score figées sur les championnats. 👉 Clique sur une ligne : la fiche s'affiche en dessous.": "Score = performance at the position (adjusted for each match's opponent) + age, without level adjustment. Score references fixed on the leagues. 👉 Click a row: the card shows below.",
+"Sélection": "National team",
+"Compétition": "Competition",
+"Édition": "Edition",
+"Performance + ajustement d'âge, même échelle que le Score de saison.": "Performance + age adjustment, same scale as the season Score.",
+"50 = joueur médian du poste en championnat.": "50 = median league player at the position.",
+"Début": "Start",
+"Fin": "End",
+"Télécharger le classement (CSV)": "Download the ranking (CSV)"
 },
 "f": [
 [
