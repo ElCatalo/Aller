@@ -1315,7 +1315,7 @@ else:
                                   horizontal=True, disabled=profil_id is None)
     saison = st.sidebar.multiselect("Saison", saisons, default=[s for s in saisons if s in ("26/27", "2026")])
 recherche = st.sidebar.text_input(
-    "Recherche par nom", placeholder="ex. Beitia",
+    "Recherche par nom", placeholder="ex. Guiagon",
     help="Cherche dans TOUS les postes. Les résultats s'affichent juste en dessous : "
          "un clic ouvre la fiche et bascule le classement sur le bon poste.")
 
@@ -1743,7 +1743,11 @@ if saison:
 if recherche:
     where.append("lower(nom) LIKE ?"); params.append(f"%{recherche.lower()}%")
 if exclure_top5:
-    where.append("NOT top5_europe")
+    # 03/11/2026 : exclut aussi les clubs du top 5 sur leurs matchs de coupe
+    # (ex. Manchester City en EFL Cup, ligne top5_europe = False), quel que soit l'adversaire.
+    # Club du top 5 = equipe presente dans un des 5 grands championnats la saison la plus recente.
+    where.append("NOT top5_europe AND squadId NOT IN (SELECT DISTINCT squadId FROM v_joueurs "
+                 "WHERE top5_europe AND saison = (SELECT max(saison) FROM v_joueurs WHERE top5_europe))")
 if exclure_mls:
     where.append("competition <> 'Major League Soccer'")
 if pays:
