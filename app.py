@@ -1741,7 +1741,7 @@ if _tr_fichier is not None:
         tr_actif = st.toggle(
             "Seulement les joueurs avec données TransferRoom", value=False,
             help="Active les filtres ci-dessous. Seuls restent les joueurs reliés à une fiche "
-                 "TransferRoom (Superliga danoise pour l'instant). Valeurs et salaires = estimations TransferRoom.")
+                 "TransferRoom (Superliga danoise et Super League suisse). Valeurs et salaires = estimations TransferRoom.")
         if tr_actif:
             _xtv_haut = max(1.0, float(np.ceil((_trf["xTV"].max() or 0) / 1e6)))
             tr_xtv = st.slider("Valeur estimée (xTV) maximum, M€", 0.0, _xtv_haut, _xtv_haut, step=0.25,

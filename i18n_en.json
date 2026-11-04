@@ -667,7 +667,7 @@
 "Données TransferRoom (valeurs et salaires = estimations TransferRoom)": "TransferRoom data (values and salaries = TransferRoom estimates)",
 "**TransferRoom**": "**TransferRoom**",
 "Seulement les joueurs avec données TransferRoom": "Only players with TransferRoom data",
-"Active les filtres ci-dessous. Seuls restent les joueurs reliés à une fiche TransferRoom (Superliga danoise pour l'instant). Valeurs et salaires = estimations TransferRoom.": "Enables the filters below. Only players linked to a TransferRoom record remain (Danish Superliga for now). Values and salaries = TransferRoom estimates.",
+"Active les filtres ci-dessous. Seuls restent les joueurs reliés à une fiche TransferRoom (Superliga danoise et Super League suisse). Valeurs et salaires = estimations TransferRoom.": "Enables the filters below. Only players linked to a TransferRoom record remain (Danish Superliga and Swiss Super League). Values and salaries = TransferRoom estimates.",
 "Valeur estimée (xTV) maximum, M€": "Maximum expected value (xTV), €M",
 "Budget : écarte les joueurs dont la valeur estimée dépasse ce montant.": "Budget: removes players whose expected value exceeds this amount.",
 "Salaire brut estimé maximum, k€/an": "Maximum est. gross salary, €k/year",
