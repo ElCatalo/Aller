@@ -1727,6 +1727,76 @@ if not MONITORING and archetype == "NINE" and pivot_dispo():
         help="Bonne = assez de ballons disputés pour une lecture stable ; faible = trop peu, le score "
              "est ramené vers la moyenne (50).")
 
+# Filtres TransferRoom (04/11/2026) : tout en bas de la barre laterale. Ne
+# concernent que les joueurs relies a une fiche TransferRoom (Superliga danoise
+# pour l'instant). Actives, ils retirent tous les autres joueurs. Lus directement
+# dans transferroom_fiche.parquet : pas besoin de refaire la base.
+TR_WHERE, TR_PARAMS = [], []
+_tr_fichier = next((d / "transferroom_fiche.parquet" for d in (_ICI / "data", _ICI)
+                    if (d / "transferroom_fiche.parquet").exists()), None)
+if _tr_fichier is not None:
+    _trf = pd.read_parquet(_tr_fichier, columns=["xTV", "EstimatedSalary_max"])
+    with st.sidebar.container(border=True):
+        st.markdown("**TransferRoom**")
+        tr_actif = st.toggle(
+            "Seulement les joueurs avec données TransferRoom", value=False,
+            help="Active les filtres ci-dessous. Seuls restent les joueurs reliés à une fiche "
+                 "TransferRoom (Superliga danoise pour l'instant). Valeurs et salaires = estimations TransferRoom.")
+        if tr_actif:
+            _xtv_haut = max(1.0, float(np.ceil((_trf["xTV"].max() or 0) / 1e6)))
+            tr_xtv = st.slider("Valeur estimée (xTV) maximum, M€", 0.0, _xtv_haut, _xtv_haut, step=0.25,
+                               help="Budget : écarte les joueurs dont la valeur estimée dépasse ce montant.")
+            _sal_haut = max(100, int(np.ceil((_trf["EstimatedSalary_max"].max() or 0) / 1e5) * 100))
+            tr_salaire = st.slider("Salaire brut estimé maximum, k€/an", 0, _sal_haut, _sal_haut, step=50,
+                                   help="Haut de la fourchette estimée par TransferRoom. Les joueurs sans "
+                                        "estimation sont gardés.")
+            tr_contrat = st.selectbox(
+                "Fin de contrat (TransferRoom)", ["Toutes", "≤ 6 mois", "≤ 12 mois", "≤ 18 mois", "≤ 24 mois"],
+                help="Opportunité de marché : un contrat qui se termine fait baisser le prix (ou libre).")
+            tr_note = st.slider("Note TR minimum", 0, 100, 0, step=1,
+                                help="Note TransferRoom actuelle du joueur.")
+            tr_marge = st.slider("Marge de progression minimum (potentiel − note)", 0, 20, 0,
+                                 help="Écart entre la note potentielle et la note actuelle TransferRoom : "
+                                      "joueurs à fort potentiel encore en développement.")
+            tr_tendance = st.selectbox(
+                "Tendance de la valeur sur 12 mois",
+                ["Toutes", "En hausse (≥ +20 %)", "Stable (−20 à +20 %)", "En baisse (≤ −20 %)"],
+                help="En baisse = prix en recul, souvent une opportunité. En hausse = joueur qui monte, "
+                     "à acheter avant que le prix ne grimpe encore.")
+            tr_minutes = st.slider("Minutes récentes au club maximum (%)", 0, 100, 100, step=5,
+                                   help="Part des minutes disponibles jouées récemment. Bas = joueur sous-utilisé, "
+                                        "club plus enclin à vendre ou à prêter.")
+            tr_pret = st.selectbox("Situation", ["Tous", "Prêtés seulement", "Hors prêts"],
+                                   help="Prêté = le club actuel n'est pas le club propriétaire.")
+            tr_agence = st.selectbox("Agence", ["Toutes", "Sans agence connue", "Agence vérifiée"],
+                                     help="Sans agence connue : approche directe possible. Vérifiée = lien "
+                                          "confirmé par l'agence sur TransferRoom.")
+
+            _c = ["TRUE"]
+            if tr_xtv < _xtv_haut:
+                _c.append("xTV <= ?"); TR_PARAMS.append(tr_xtv * 1e6)
+            if tr_salaire < _sal_haut:
+                _c.append("(EstimatedSalary_max IS NULL OR EstimatedSalary_max <= ?)"); TR_PARAMS.append(tr_salaire * 1e3)
+            if tr_contrat != "Toutes":
+                _c.append("ContractExpiration <= current_date + to_months(?)")
+                TR_PARAMS.append(int(tr_contrat.split()[1]))
+            if tr_note:
+                _c.append("rating >= ?"); TR_PARAMS.append(tr_note)
+            if tr_marge:
+                _c.append("Potential - rating >= ?"); TR_PARAMS.append(tr_marge)
+            _c += {"En hausse (≥ +20 %)": ["xTVChange12mPerc >= 20"],
+                   "Stable (−20 à +20 %)": ["xTVChange12mPerc > -20 AND xTVChange12mPerc < 20"],
+                   "En baisse (≤ −20 %)": ["xTVChange12mPerc <= -20"]}.get(tr_tendance, [])
+            if tr_minutes < 100:
+                _c.append("CurrentClubRecentMinsPerc <= ?"); TR_PARAMS.append(tr_minutes)
+            _c += {"Prêtés seulement": ["ParentSquadId IS NOT NULL AND ParentSquadId <> CurrentSquadId"],
+                   "Hors prêts": ["(ParentSquadId IS NULL OR ParentSquadId = CurrentSquadId)"]}.get(tr_pret, [])
+            _c += {"Sans agence connue": ["Agency IS NULL"],
+                   "Agence vérifiée": ["AgencyVerified = 'Yes'"]}.get(tr_agence, [])
+            _chemin = str(_tr_fichier).replace("'", "''")
+            TR_WHERE.append(f"playerId IN (SELECT playerId FROM read_parquet('{_chemin}') "
+                            f"WHERE {' AND '.join(_c)})")
+
 # Memes filtres pour les deux onglets ; seuls le volume (saison / periode) et
 # l'age different : le monitoring garde les joueurs sans date de naissance
 # tant que l'age maximum n'est pas regle.
@@ -1775,6 +1845,7 @@ if PRESSION_FILTRES.get(filtre_pression):
     where.append(PRESSION_FILTRES[filtre_pression])
 if PIVOT_FIABILITE.get(fiab_pivot):
     where.append(PIVOT_FIABILITE[fiab_pivot])
+where += TR_WHERE; params += TR_PARAMS
 _exclus = ids_exclus()
 if masquer_exclus and _exclus:
     where.append(f"playerId NOT IN ({','.join('?' * len(_exclus))})"); params += _exclus
