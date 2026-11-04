@@ -3005,6 +3005,111 @@ def section_similaires(j, cle: tuple) -> None:
     st.caption("  \n".join(notes))
 
 
+# ----------------------------------------------------------------- TransferRoom
+# Donnees TransferRoom (04/11/2026, acces temporaire, Superliga danoise) :
+# valeur estimee, contrat, salaire estime, agence, transferts. Produites par
+# TransferRoom/01_collecte.py puis 02_liaison.py (liaison au playerId Impect par
+# date de naissance + nom). Fichiers lus a cote de la base : sans eux, pas de bloc.
+_TR_DOSSIERS = (_ICI / "data", _ICI)
+
+
+@st.cache_data(ttl=3600)
+def transferroom(nom: str) -> pd.DataFrame | None:
+    for d in _TR_DOSSIERS:
+        f = d / f"transferroom_{nom}.parquet"
+        if f.exists():
+            return pd.read_parquet(f)
+    return None
+
+
+def _eur(v) -> str:
+    if v is None or pd.isna(v):
+        return "—"
+    v = float(v)
+    if abs(v) >= 1e6:
+        return f"{v / 1e6:.2f} M€".replace(".", ",")
+    return f"{v / 1e3:.0f} k€" if abs(v) >= 1e3 else f"{v:.0f} €"
+
+
+def bloc_transferroom(j) -> None:
+    fiche = transferroom("fiche")
+    if fiche is None:
+        return
+    t = fiche[fiche["playerId"] == int(j.playerId)]
+    if t.empty:
+        return
+    # Champs texte vides = NaN dans le parquet : ramenes a None (sinon « nan » a l'ecran).
+    t = t.iloc[0].map(lambda v: None if isinstance(v, float) and pd.isna(v) else v)
+    _maj =pd.to_datetime(t.get("collecte"), errors="coerce")
+    st.markdown("##### TransferRoom")
+    st.caption("Données TransferRoom (valeurs et salaires = estimations TransferRoom)"
+               + (f" · collecte du {_maj:%d/%m/%Y}" if pd.notna(_maj) else ""))
+
+    def _pct(v):
+        return f"{v:+.0f} % sur 12 mois" if pd.notna(v) else None
+
+    _fin = pd.to_datetime(t.get("ContractExpiration"), errors="coerce")
+    _fin_imp = pd.to_datetime(j.get("contrat_fin"), errors="coerce")
+    _ecart = (pd.notna(_fin) and pd.notna(_fin_imp) and _fin.year != _fin_imp.year)
+    _agence = t.get("Agency") or "—"
+    if t.get("Agency") and t.get("AgencyVerified") == "Yes":
+        _agence += " ✓"
+    _mets = [
+        ("Valeur estimée (xTV)", _eur(t.get("xTV")), _pct(t.get("xTVChange12mPerc")),
+         "Valeur de transfert attendue selon TransferRoom, en euros. Variation sur 12 mois en dessous."),
+        ("Valeur de base", _eur(t.get("BaseValue")), None,
+         "xTV sans l'effet d'un contrat qui expire ni d'un montant de transfert récent."),
+        ("Note TR", n_(t.get("rating"), "{:.1f}"),
+         (f"potentiel {t.get('Potential'):.1f}" if pd.notna(t.get("Potential")) else None),
+         "Note TransferRoom du joueur et note potentielle."),
+        ("Salaire brut estimé", t.get("EstimatedSalary") or "—",
+         (f"net {t.get('EstimatedNetSalary')}" if t.get("EstimatedNetSalary") else None),
+         "Fourchette annuelle estimée par TransferRoom, en euros. Ce n'est pas un salaire connu."),
+        ("Fin de contrat (TR)", f"{_fin:%m/%Y}" if pd.notna(_fin) else "—",
+         ("≠ Impect" if _ecart else None),
+         "Date de fin de contrat selon TransferRoom. « ≠ Impect » : l'année diffère de celle d'Impect, à vérifier."),
+        ("Agence", _agence, None, "Agence qui représente le joueur. ✓ = lien vérifié par l'agence sur TransferRoom."),
+        ("Style TR", t.get("position_role") or "—",
+         " / ".join(p for p in (t.get("FirstPosition"), t.get("SecondPosition")) if p) or None,
+         "Style de jeu TransferRoom au poste principal, puis postes principal / secondaire."),
+        ("Minutes récentes", n_(t.get("CurrentClubRecentMinsPerc"), "{:.0f} %"), None,
+         "Part des minutes disponibles jouées récemment avec le club actuel."),
+        ("Points ajoutés /90", n_(t.get("PointsAdded_90_12M"), "{:.2f}"), "12 derniers mois",
+         "Mesure TransferRoom de la contribution du joueur au-dessus d'une référence, par 90 minutes."),
+        ("Prêt", f"de {t.get('parent_squad_name')}"
+         if t.get("parent_squad_name") and t.get("ParentSquadId") != t.get("CurrentSquadId") else "non", None,
+         "Club propriétaire du joueur s'il est prêté."),
+    ]
+    for _debut in range(0, len(_mets), 5):
+        _cols = st.columns(5)
+        for _col, (_lab, _val, _delta, _aide) in zip(_cols, _mets[_debut:_debut + 5]):
+            _col.metric(_lab, _val, _delta, delta_color="off", help=_aide)
+
+    val = transferroom("valeurs")
+    trs = transferroom("transferts")
+    g, d = st.columns([3, 2])
+    if val is not None:
+        v = val[(val["playerId"] == int(j.playerId)) & val["type"].isin(["xTV", "BaseValue"])].copy()
+        v = v[pd.to_datetime(v["mois"]) >= pd.Timestamp.today() - pd.DateOffset(years=5)]
+        if not v.empty:
+            v["type"] = v["type"].map({"xTV": "Valeur estimée (xTV)", "BaseValue": "Valeur de base"})
+            fig = px.line(v, x="mois", y="valeur_eur", color="type",
+                          labels={"mois": "", "valeur_eur": "€", "type": ""})
+            fig.update_layout(height=260, margin=dict(l=0, r=0, t=30, b=0),
+                              title="Évolution de la valeur (5 ans)", legend=dict(orientation="h", y=-0.2))
+            g.plotly_chart(fig, width="stretch", key=f"tr_val_{j.playerId}_{j.iterationId}_{j.position}")
+    if trs is not None:
+        x = trs[trs["playerId"] == int(j.playerId)]
+        if not x.empty:
+            x = x.assign(montant=x["montant_eur"].map(lambda m: _eur(m) if m else "—"),
+                         date=pd.to_datetime(x["date"]).dt.strftime("%m/%Y"))
+            d.markdown("**Transferts et prêts**")
+            d.dataframe(x[["date", "type", "de", "vers", "montant"]]
+                        .rename(columns={"date": "Date", "type": "Type", "de": "De", "vers": "Vers",
+                                         "montant": "Montant"}),
+                        hide_index=True, width="stretch", height=230)
+
+
 def carte_joueur(j, extra=None) -> None:
     """Fiche complete d'un joueur. j doit porter une colonne archetype_courant.
     extra : fonction affichant un bloc supplementaire sous les boutons (la
@@ -3129,6 +3234,8 @@ def carte_joueur(j, extra=None) -> None:
         + (f"  \n**Score sans l'âge {n_(j.score_sans_age)}** = le Score ci-dessus "
            f"{-j.aj_age:+.1f}, c'est-à-dire sans son ajustement d'âge"
            if SANS_AGE and pd.notna(j.get("score_sans_age")) else ""))
+
+    bloc_transferroom(j)
 
     b1, b2, b3, b4 = st.columns([1, 1, 1, 2])
     if b1.button(f"Ajouter à « {shortlist} »", width="stretch", key=f"add_{cle}"):
