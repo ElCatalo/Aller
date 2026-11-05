@@ -696,7 +696,16 @@
 "Prêté = le club actuel n'est pas le club propriétaire.": "Loaned = the current club is not the parent club.",
 "Sans agence connue": "No known agency",
 "Agence vérifiée": "Verified agency",
-"Sans agence connue : approche directe possible. Vérifiée = lien confirmé par l'agence sur TransferRoom.": "No known agency: direct approach possible. Verified = link confirmed by the agency on TransferRoom."
+"Sans agence connue : approche directe possible. Vérifiée = lien confirmé par l'agence sur TransferRoom.": "No known agency: direct approach possible. Verified = link confirmed by the agency on TransferRoom.",
+"Centreur CPA": "Set-piece crosser",
+"Receveur aérien CPA": "Set-piece aerial target",
+"Coup franc direct": "Direct free kick",
+"Fiabilité CPA": "Set-piece reliability",
+"Centreur sur coups de pied arrêtés (0-100, 50 = moyen) : centres directs sur corner et coups francs indirects centrés, jeu court exclu. xG des tirs dans les 5 s, 1er contact gagné par un coéquipier, tir obtenu, pxT, volume. Toute la carrière (saisons récentes plus lourdes). Vide si trop peu de centres pour un score fiable. Indicatif, hors score.": "Set-piece crosser (0-100, 50 = average): direct corner deliveries and crossed indirect free kicks, short routines excluded. xG of shots within 5 s, first contact won by a teammate, shot obtained, pxT, volume. Whole career (recent seasons weigh more). Empty when too few deliveries for a reliable score. Indicative, not in the score.",
+"Receveur aérien sur coups de pied arrêtés (0-100, 50 = moyen) : 60 % offensif (xG de ses tirs, duels aériens, 1er contact sur corners, coups francs centrés, touches longues) + 40 % défensif (duels aériens, 1er contact sur les CPA adverses). Seuls les volets fiables comptent. Toute la carrière. Indicatif, hors score.": "Set-piece aerial target (0-100, 50 = average): 60% attacking (xG of his shots, aerial duels, first contact on corners, crossed free kicks, long throws) + 40% defending (aerial duels, first contact on opponent set pieces). Only reliable parts count. Whole career. Indicative, not in the score.",
+"Tireur de coup franc direct (0-100, 50 = moyen) : qualité de frappe (xG post-tir − xG), % cadrés, buts − xG, xG moyen. Penalties exclus. Toute la carrière. Vide si trop peu de tirs. Indicatif, hors score.": "Direct free-kick taker (0-100, 50 = average): striking quality (post-shot xG − xG), % on target, goals − xG, average xG. Penalties excluded. Whole career. Empty when too few shots. Indicative, not in the score.",
+"Fiabilité de chaque pilier CPA, mesurée séparément : bonne, moy. (moyenne) ou – (trop peu d'actions, score masqué). Récep. = offensif/défensif.": "Reliability of each set-piece pillar, measured separately: good, avg. (medium) or – (too few actions, score hidden). Rec. = attacking/defending.",
+"moy.": "avg."
 },
 "f": [
 [

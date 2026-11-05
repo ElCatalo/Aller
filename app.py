@@ -1242,6 +1242,24 @@ if pivot_dispo():
                "pivot_fiabilite_classe")
 
 
+@st.cache_data(show_spinner=False)
+def cpa_dispo() -> bool:
+    """La base contient-elle les piliers CPA (CPA_Joueurs, 05/11/2026) ?"""
+    try:
+        requete("SELECT cpa_centreur_score FROM v_joueurs LIMIT 1")
+        return True
+    except duckdb.Error:
+        return False
+
+
+if cpa_dispo():
+    CHAMPS += (", cpa_centreur_score, cpa_centreur_fiabilite_classe, cpa_receveur_score, cpa_receveur_composition, "
+               "cpa_rec_off_fiabilite_classe, cpa_rec_def_fiabilite_classe, cpa_cfd_score, cpa_cfd_fiabilite_classe")
+
+# Fiabilite d'un pilier CPA, en abrege pour le listing
+CPA_FIAB_COURT = {"bonne": "bonne", "moyenne": "moy.", "faible": "–"}
+
+
 @st.cache_data(ttl=600)
 @st.cache_data(show_spinner=False)
 def pression_dispo() -> bool:
@@ -3876,13 +3894,22 @@ with (onglet_mon if MONITORING else
             _colonnes_profil = ["profil_principal"]
         _colonnes_pivot = (["pivot_score", "pivot_n", "pivot_par90", "pivot_fiabilite_classe"]
                            if archetype == "NINE" and "pivot_score" in res else [])
+        # Piliers CPA (indicatifs, hors score) : score vide si la fiabilite du pilier est faible
+        _colonnes_cpa = []
+        if "cpa_centreur_score" in res:
+            _f = lambda c: res[c].map(CPA_FIAB_COURT).fillna("–")  # noqa: E731
+            _rec = res.cpa_rec_off_fiabilite_classe.map(CPA_FIAB_COURT).fillna("–") + "/" + \
+                res.cpa_rec_def_fiabilite_classe.map(CPA_FIAB_COURT).fillna("–")
+            res["fiab_cpa"] = ("Centre " + _f("cpa_centreur_fiabilite_classe") + " · Récep. " + _rec
+                               + " · CF " + _f("cpa_cfd_fiabilite_classe"))
+            _colonnes_cpa = ["cpa_centreur_score", "cpa_receveur_score", "cpa_cfd_score", "fiab_cpa"]
         event = st.dataframe(
             res, hide_index=True, width="stretch", height=430, key=f"tableau_{page}",
             on_select="rerun", selection_mode="single-row",
             column_order=["nom", "age", "club", "competition", "pays", "niveau", "saison",
                           "score"] + _colonnes_pivot + (["role_milieu"] if archetype in ("SIX", "EIGHT") else [])
                          + _colonnes_profil + [("score_v8" if SC == "qualite_actuelle" else "qualite"),
-                          "contrat_fin", "minutes"] + _col_prudence + ["pied_fort", "performance",
+                          "contrat_fin", "minutes"] + _col_prudence + _colonnes_cpa + ["pied_fort", "performance",
                           "aj_niveau",
                           "aj_age", "aj_traduction", "progression", "gros_matchs", "coef_adv",
                           "rang_mondial"],
@@ -3900,6 +3927,17 @@ with (onglet_mon if MONITORING else
                          "(gagnés ou perdus en duel), sur la saison."),
                 "pivot_par90": st.column_config.NumberColumn(
                     "Par 90", format="%.1f", help="Ballons aériens disputés dans la zone par 90 minutes."),
+                "cpa_centreur_score": st.column_config.ProgressColumn(
+                    "Centreur CPA", min_value=0, max_value=100, format="%.0f",
+                    help='Centreur sur coups de pied arrêtés (0-100, 50 = moyen) : centres directs sur corner et coups francs indirects centrés, jeu court exclu. xG des tirs dans les 5 s, 1er contact gagné par un coéquipier, tir obtenu, pxT, volume. Toute la carrière (saisons récentes plus lourdes). Vide si trop peu de centres pour un score fiable. Indicatif, hors score.'),
+                "cpa_receveur_score": st.column_config.ProgressColumn(
+                    "Receveur aérien CPA", min_value=0, max_value=100, format="%.0f",
+                    help='Receveur aérien sur coups de pied arrêtés (0-100, 50 = moyen) : 60 % offensif (xG de ses tirs, duels aériens, 1er contact sur corners, coups francs centrés, touches longues) + 40 % défensif (duels aériens, 1er contact sur les CPA adverses). Seuls les volets fiables comptent. Toute la carrière. Indicatif, hors score.'),
+                "cpa_cfd_score": st.column_config.ProgressColumn(
+                    "Coup franc direct", min_value=0, max_value=100, format="%.0f",
+                    help='Tireur de coup franc direct (0-100, 50 = moyen) : qualité de frappe (xG post-tir − xG), % cadrés, buts − xG, xG moyen. Penalties exclus. Toute la carrière. Vide si trop peu de tirs. Indicatif, hors score.'),
+                "fiab_cpa": st.column_config.TextColumn(
+                    "Fiabilité CPA", help="Fiabilité de chaque pilier CPA, mesurée séparément : bonne, moy. (moyenne) ou – (trop peu d'actions, score masqué). Récep. = offensif/défensif."),
                 "pivot_fiabilite_classe": st.column_config.TextColumn(
                     "Fiabilité pivot", help="Bonne, moyenne ou faible selon le nombre de ballons disputés."),
                 "prudence": st.column_config.TextColumn(
