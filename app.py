@@ -2510,6 +2510,109 @@ def section_pivot(j) -> None:
                "du championnat n'est pas corrigé. Lecture à part, elle n'entre pas dans le score.")
 
 
+# Piliers CPA (CPA_Joueurs, 05/11/2026) : (cle, titre, unite, lignes (mesure, valeur, libelle, format, aide))
+CPA_PILIERS = [
+    ("centreur", "Centreur", "centres tirés", [
+        ("xg", "xg", "xG créé par centre", "{:.3f}", "xG des tirs de son équipe dans les 5 s qui suivent le centre."),
+        ("contact", "contact", "1er contact gagné", "{:.0%}", "Part des centres dont un coéquipier gagne le premier contact."),
+        ("tir", "tir", "Tir obtenu", "{:.0%}", "Part des centres suivis d'un tir dans les 5 s."),
+        ("pxt", "pxt", "pxT par centre", "{:.4f}", "Menace gagnée (pxT positif Impect) sur la séquence du centre."),
+        ("volume", "par90", "Centres par 90", "{:.2f}", "Combien de centres CPA il tire : est-il le tireur désigné ?"),
+    ]),
+    ("rec_off", "Receveur offensif", "ballons où il est impliqué", [
+        ("xg", "xg", "xG de ses tirs par ballon", "{:.3f}", "xG de ses propres tirs dans les 5 s (tête ou pied)."),
+        ("duel", "duel", "Duels aériens gagnés", "{:.0%}", "Sur ces ballons, part des duels aériens gagnés."),
+        ("contact", "contact", "1er contact gagné", "{:.0%}", "Part des ballons où il fait lui-même le premier contact."),
+        ("volume", "par90", "Ballons par 90", "{:.2f}", "Combien de ballons CPA offensifs il dispute : est-il une cible ?"),
+    ]),
+    ("rec_def", "Receveur défensif", "ballons adverses où il est impliqué", [
+        ("duel", "duel", "Duels aériens gagnés", "{:.0%}", "Sur les CPA adverses, part des duels aériens gagnés."),
+        ("contact", "contact", "1er contact défensif", "{:.0%}", "Part des ballons où il fait le premier contact pour son équipe."),
+        ("volume", "par90", "Ballons par 90", "{:.2f}", "Combien de ballons CPA défensifs il dispute."),
+    ]),
+    ("cfd", "Coup franc direct", "tirs", [
+        ("qualite", "qualite", "xG post-tir − xG", "{:+.3f}", "Qualité de frappe : ce que vaut le tir une fois frappé, moins ce que valait la position. Hors cadre = −xG."),
+        ("cadre", "cadre", "Tirs cadrés", "{:.0%}", "Part des coups francs directs cadrés."),
+        ("buts_xg", "buts_xg", "Buts − xG par tir", "{:+.3f}", "Réussite au-delà de l'attendu."),
+        ("xg", "xg", "xG moyen", "{:.3f}", "Difficulté moyenne des positions de frappe."),
+    ]),
+]
+
+
+@st.cache_data(show_spinner=False)
+def cpa_fiabilites() -> pd.DataFrame:
+    try:
+        return requete("SELECT * FROM fiabilite_cpa")
+    except duckdb.Error:
+        return pd.DataFrame()
+
+
+def section_cpa(j) -> None:
+    """Bloc « Coups de pied arretes » : 4 piliers indicatifs, hors score V10, sur toute la carriere."""
+    if not cpa_dispo():
+        return
+    try:
+        d = requete("SELECT * FROM fait_cpa WHERE playerId = ?", (int(j.playerId),))
+    except duckdb.Error:
+        return
+    if d.empty:
+        return
+    d = d.iloc[0]
+    presents = [p for p in CPA_PILIERS if pd.notna(d.get(f"cpa_{p[0]}_n")) and d.get(f"cpa_{p[0]}_n") > 0]
+    if not presents:
+        return
+    st.markdown("#### 🚩 Coups de pied arrêtés · bêta")
+    st.caption("Toute la carrière disponible (saisons récentes plus lourdes : ×0,7 par saison d'écart), toutes "
+               "ligues confondues. Score masqué quand la fiabilité du pilier est faible. Lecture à part, elle "
+               "n'entre pas dans le score.")
+    fi = cpa_fiabilites()
+    onglets = st.tabs([p[1] for p in presents])
+    for (cle, titre, unite, lignes_def), ong in zip(presents, onglets):
+        with ong:
+            pre = f"cpa_{cle}_"
+            ks = fi[(fi.pilier == cle) & (fi.mesure == "score")]["k"] if not fi.empty else pd.Series(dtype=float)
+            k = float(ks.iloc[0]) if len(ks) and pd.notna(ks.iloc[0]) and np.isfinite(ks.iloc[0]) else None
+            classe = str(d.get(pre + "fiabilite_classe") or "faible")
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Score", n_(d.get(pre + "score"), "{:.0f}"),
+                      help="0-100, 50 = moyen. Ramené vers 50 quand l'échantillon est petit ; vide si fiabilité faible.")
+            c2.metric("Actions", f"{int(d[pre + 'n'])}", help=f"Nombre de {unite}.")
+            c3.metric("Matchs / saisons", f"{int(d[pre + 'matchs'])} / {int(d[pre + 'saisons'])}")
+            c4.metric("Fiabilité", classe.capitalize(),
+                      help=(f"Indice {d[pre + 'fiabilite']:.2f} = n / (n + {k:.0f}). Il faut environ {k:.0f} actions "
+                            "(pondérées) pour une lecture à moitié fiable, mesuré sur les matchs pairs et impairs."
+                            if k else "Fiabilité pas encore mesurable : pas assez de joueurs avec assez d'actions."))
+            lignes = []
+            for mes, col, libelle, fmt, aide in lignes_def:
+                val = d.get(pre + col)
+                if val is None or pd.isna(val):
+                    continue
+                pct = d.get(f"pct_{pre}{mes}")
+                lignes.append({"indicateur": libelle, "valeur": fmt.format(val),
+                               "percentile": float(pct) if pct is not None and pd.notna(pct) else None, "lecture": aide})
+            if lignes:
+                st.dataframe(pd.DataFrame(lignes), hide_index=True, width="stretch",
+                             column_config={
+                                 "indicateur": st.column_config.TextColumn("Indicateur"),
+                                 "valeur": st.column_config.TextColumn("Valeur", width="small"),
+                                 "percentile": st.column_config.ProgressColumn(
+                                     "Percentile", min_value=0, max_value=100, format="P%.0f"),
+                                 "lecture": st.column_config.TextColumn("Comment le lire", width="large")})
+            extra = []
+            if cle == "centreur" and pd.notna(d.get(pre + "n_corners")):
+                extra.append(f"{int(d[pre + 'n_corners'])} corners, {int(d[pre + 'n'] - d[pre + 'n_corners'])} coups francs")
+            if cle in ("rec_off", "rec_def") and pd.notna(d.get(pre + "duels")):
+                extra.append(f"{d[pre + 'duels']:.0f} duels aériens (pondérés)")
+            if cle == "cfd" and pd.notna(d.get(pre + "buts")):
+                extra.append(f"{int(d[pre + 'buts'])} but(s)")
+            if pd.notna(d.get(pre + "score_brut")):
+                extra.append(f"score brut {d[pre + 'score_brut']:.0f}" + (" (indicatif : fiabilité faible)" if classe == "faible" else ""))
+            if extra:
+                st.caption(" · ".join(extra) + ".")
+            if classe == "faible":
+                st.caption("⚠ Trop peu d'actions pour un score fiable : percentiles à titre indicatif.")
+
+
 def section_pression(j) -> None:
     """Bloc « Sous pression » : descriptif, hors score.
 
@@ -3362,6 +3465,7 @@ def carte_joueur(j, extra=None) -> None:
     section_profils(cle, j.minutes)
     section_pression(j)
     section_pivot(j)
+    section_cpa(j)
     section_heatmap(j)
 
     g1, g2 = st.columns([3, 2])
