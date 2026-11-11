@@ -728,7 +728,9 @@
 "⚠ Trop peu d'actions pour un score fiable : percentiles à titre indicatif.": "⚠ Too few actions for a reliable score: percentiles are indicative only.",
 "Toute la carrière disponible (saisons récentes plus lourdes : ×0,7 par saison d'écart), toutes ligues confondues. Score masqué quand la fiabilité du pilier est faible. Lecture à part, elle n'entre pas dans le score.": "Whole available career (recent seasons weigh more: ×0.7 per season back), all leagues together. Score hidden when the pillar's reliability is low. Separate reading, not part of the score.",
 "0-100, 50 = moyen. Ramené vers 50 quand l'échantillon est petit ; vide si fiabilité faible.": "0-100, 50 = average. Pulled toward 50 for small samples; empty when reliability is low.",
-"Fiabilité pas encore mesurable : pas assez de joueurs avec assez d'actions.": "Reliability not measurable yet: not enough players with enough actions."
+"Fiabilité pas encore mesurable : pas assez de joueurs avec assez d'actions.": "Reliability not measurable yet: not enough players with enough actions.",
+"Passe au sol (pertes rapportées aux passes)": "Low pass (losses per pass)",
+"Passe diagonale (pertes rapportées aux passes)": "Diagonal pass (losses per pass)"
 },
 "f": [
 [
