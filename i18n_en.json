@@ -1664,5 +1664,15 @@
 " contre le top du championnat",
 " against the top of the league"
 ]
-]
+],
+"Passes au sol réussies vs attendu": "Ground passes completed vs expected",
+"Passes au sol réussies au-dessus de ce qu'on attend vu la zone, le poste, la pression et la distance, pour 100 passes. Ramené vers 0 pour les petits volumes. Fidélité 0,68.": "Ground passes completed above what is expected given zone, position, pressure and distance, per 100 passes. Pulled toward 0 for small samples. Reliability 0.68.",
+"Passes au sol sous pression vs attendu": "Ground passes under pressure vs expected",
+"Même mesure, passes au sol sous forte pression (≥ 50). Fidélité 0,52 : une tendance.": "Same measure, ground passes under high pressure (≥ 50). Reliability 0.52: a trend.",
+"Passes aériennes réussies vs attendu": "Aerial passes completed vs expected",
+"Passes aériennes réussies au-dessus de l'attendu (zone, poste, pression, distance), pour 100 passes. Fidélité 0,60.": "Aerial passes completed above expected (zone, position, pressure, distance), per 100 passes. Reliability 0.60.",
+"Ballon aérien reçu puis passe réussie": "Aerial ball received, then pass completed",
+"Part de ses réceptions de ballons aériens suivies d'une passe réussie de sa part. Un tir ou une perte comptent comme non conservés. À partir de 20 réceptions. Fidélité 0,50 : une tendance.": "Share of his aerial-ball receptions followed by a completed pass of his own. A shot or a loss counts as not retained. From 20 receptions. Reliability 0.50: a trend.",
+"Pas de réussite des passes aériennes sous pression : mesure trop instable d'une moitié de saison à l'autre (fidélité 0,38, même comparée à l'attendu).": "No aerial pass success under pressure: too unstable from one half-season to the other (reliability 0.38, even compared with expected).",
+"Pas de réussite des passes aériennes sous pression : mesure trop instable d'une moitié de saison à l'autre (fidélité 0,38, même comparée à l'attendu). Moins de 900 minutes : à lire comme une tendance.": "No aerial pass success under pressure: too unstable from one half-season to the other (reliability 0.38, even compared with expected). Under 900 minutes: read as a trend."
 }

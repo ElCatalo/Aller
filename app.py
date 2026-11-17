@@ -2651,6 +2651,20 @@ PRESSION_HAUTEUR_LIGNES = [
     ("pct_reussite_fp_sol_pct", "reussite_fp_sol_pct", "Réussite au sol sous pression", "{:.0f} %",
      "Réussite brute de ses passes au sol sous forte pression. Indicatif : fidélité 0,57, et "
      "non corrigée de la zone ni de la distance."),
+    # V2 (17/11/2026) : reussite comparee a l'attendu de la cellule hauteur x tiers x poste x pression x distance,
+    # pour 100 passes, retrecie vers 0 (petits volumes). Fidelite a poste egal (25/26) : sol 0,68, sol sous FP 0,52,
+    # air 0,60, reception aerienne conservee 0,50. Air sous forte pression (0,38) non montree.
+    ("pct_rva_sol_100", "rva_sol_100", "Passes au sol réussies vs attendu", "{:+.1f} /100",
+     "Passes au sol réussies au-dessus de ce qu'on attend vu la zone, le poste, la pression et la distance, "
+     "pour 100 passes. Ramené vers 0 pour les petits volumes. Fidélité 0,68."),
+    ("pct_rva_sol_fp_100", "rva_sol_fp_100", "Passes au sol sous pression vs attendu", "{:+.1f} /100",
+     "Même mesure, passes au sol sous forte pression (≥ 50). Fidélité 0,52 : une tendance."),
+    ("pct_rva_air_100", "rva_air_100", "Passes aériennes réussies vs attendu", "{:+.1f} /100",
+     "Passes aériennes réussies au-dessus de l'attendu (zone, poste, pression, distance), pour 100 passes. "
+     "Fidélité 0,60."),
+    ("pct_conserv_air_pct", "conserv_air_pct", "Ballon aérien reçu puis passe réussie", "{:.0f} %",
+     "Part de ses réceptions de ballons aériens suivies d'une passe réussie de sa part. Un tir ou une perte "
+     "comptent comme non conservés. À partir de 20 réceptions. Fidélité 0,50 : une tendance."),
     ("pct_pression_reception_sol", "pression_reception_sol", "Pression subie à la réception — au sol", "{:.1f}",
      "Pression adverse moyenne quand il reçoit un ballon au sol."),
     ("pct_pression_reception_air", "pression_reception_air", "Pression subie à la réception — aérienne", "{:.1f}",
@@ -2685,7 +2699,7 @@ def section_pression_hauteur(d, reduit: bool) -> None:
                          "Percentile du poste", min_value=0, max_value=100, format="P%.0f"),
                      "lecture": st.column_config.TextColumn("Comment le lire", width="large")})
     st.caption("Pas de réussite des passes aériennes sous pression : mesure trop instable d'une moitié de "
-               "saison à l'autre (fidélité 0,19)."
+               "saison à l'autre (fidélité 0,38, même comparée à l'attendu)."
                + (" Moins de 900 minutes : à lire comme une tendance." if reduit else ""))
 
 
