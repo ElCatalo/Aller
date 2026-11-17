@@ -73,6 +73,27 @@ st.set_page_config(page_title="Scouting Impect — Charleroi", page_icon="🦓",
 import functools  # noqa: E402
 import json  # noqa: E402
 
+# --- 17/11/2026 : recherche par nom sur les 26 lettres (Östman = Ostman, Ødegaard = Odegaard, Łukasz = Lukasz) ---
+# Lettres que la decomposition Unicode ne ramene pas a une lettre simple : remplacees a la main, cote SQL et cote Python.
+_LETTRES_SPECIALES = {'ø': 'o', 'ł': 'l', 'đ': 'd', 'ð': 'd', 'æ': 'ae', 'œ': 'oe', 'ß': 'ss', 'ı': 'i', 'þ': 'th', 'ħ': 'h'}
+
+
+def _plier(texte: str) -> str:
+    """Texte tape -> minuscules sans accents ni lettres speciales (meme regle que _sql_plier)."""
+    import unicodedata
+    t = str(texte).lower()
+    for a, b in _LETTRES_SPECIALES.items():
+        t = t.replace(a, b)
+    return ''.join(c for c in unicodedata.normalize('NFKD', t) if not unicodedata.combining(c)).strip()
+
+
+def _sql_plier(col: str) -> str:
+    """Expression DuckDB equivalente a _plier pour une colonne."""
+    e = f"lower({col})"
+    for a, b in _LETTRES_SPECIALES.items():
+        e = f"replace({e}, '{a}', '{b}')"
+    return f"strip_accents({e})"
+
 _I18N_FICHIER = _ICI / "i18n_en.json"
 _I18N_LETTRES = re.compile(r"[A-Za-zÀ-ÿ]{2}")
 _I18N_CHAMP = re.compile(r"(?<!\{)\{(\d+)\}(?!\})")
@@ -1352,7 +1373,7 @@ def chercher_partout(texte: str, saisons_filtre: tuple, poids: tuple = POIDS_DEF
     poids : sert seulement de cle de cache (le Score depend des poids regles
     dans la barre laterale, appliques par requete()).
     """
-    ou, pa = ["lower(nom) LIKE ?"], [f"%{texte.lower()}%"]
+    ou, pa = [f"{_sql_plier('nom')} LIKE ?"], [f"%{_plier(texte)}%"]
     if saisons_filtre:
         ou.append(f"saison IN ({','.join('?' * len(saisons_filtre))})"); pa += list(saisons_filtre)
     return requete(f"""
@@ -1374,14 +1395,14 @@ def chercher_monitoring(texte: str, periode_j: int) -> pd.DataFrame:
     saison (ex. ailier a Aalborg en 25/26) alors qu'il est classe 9 a Silkeborg
     sur la periode : introuvable. Ici on cherche dans les lignes du monitoring
     de la periode choisie, avec le poste sous lequel il y figure."""
-    return requete("""
+    return requete(f"""
         SELECT m.nom, m.club, m.competition, m.archetype, m.position, round(m.score,1) AS score,
                m.n_matchs, m.playerId, m.squadId, m.iterationId
         FROM mon.mon_joueur m
         -- Nom lu dans mon_joueur lui-meme : dim_joueur ne contient que les joueurs
         -- qui ont une fiche de saison (cas Mathys Houdayer, 14/10/2026).
-        WHERE m.periode_jours = ? AND lower(m.nom) LIKE ?
-        ORDER BY m.score DESC LIMIT 40""", (int(periode_j), f"%{texte.lower()}%"))
+        WHERE m.periode_jours = ? AND {_sql_plier('m.nom')} LIKE ?
+        ORDER BY m.score DESC LIMIT 40""", (int(periode_j), f"%{_plier(texte)}%"))
 
 
 if recherche and len(recherche.strip()) >= 2 and MONITORING and MON is not None:
@@ -1829,7 +1850,7 @@ else:
 if saison:
     where.append(f"saison IN ({','.join('?' * len(saison))})"); params += saison
 if recherche:
-    where.append("lower(nom) LIKE ?"); params.append(f"%{recherche.lower()}%")
+    where.append(f"{_sql_plier('nom')} LIKE ?"); params.append(f"%{_plier(recherche)}%")
 if exclure_top5:
     # 03/11/2026 : exclut aussi les clubs du top 5 sur leurs matchs de coupe
     # (ex. Manchester City en EFL Cup, ligne top5_europe = False), quel que soit l'adversaire.
