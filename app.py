@@ -2662,6 +2662,11 @@ PRESSION_HAUTEUR_LIGNES = [
     ("pct_rva_air_100", "rva_air_100", "Passes aériennes réussies vs attendu", "{:+.1f} /100",
      "Passes aériennes réussies au-dessus de l'attendu (zone, poste, pression, distance), pour 100 passes. "
      "Fidélité 0,60."),
+    # Piste 1 (17/11/2026, 11_traduction.py) : seul l'aerien depend du championnat (sol neutre, sous FP non mesurable)
+    ("pct_rva_air_jpl_100", "rva_air_jpl_100", "Passes aériennes vs attendu, traduit JPL", "{:+.1f} /100",
+     "Même mesure ramenée au niveau de la JPL : on retire l'écart propre à son championnat, mesuré sur "
+     "les joueurs ayant changé de ligue (Premier League −2,0, Bundesliga −1,5, MLS Next Pro +3,9 pour 100). "
+     "Fidélité 0,60 ; écart de ligue connu à ±0,9 près."),
     ("pct_conserv_air_pct", "conserv_air_pct", "Ballon aérien reçu puis passe réussie", "{:.0f} %",
      "Part de ses réceptions de ballons aériens suivies d'une passe réussie de sa part. Un tir ou une perte "
      "comptent comme non conservés. À partir de 20 réceptions. Fidélité 0,50 : une tendance."),
@@ -2681,6 +2686,8 @@ def section_pression_hauteur(d, reduit: bool) -> None:
         val = d.get(cle_val)
         if val is None or pd.isna(val):
             continue
+        if cle_val == "rva_air_jpl_100" and abs(val - (d.get("rva_air_100") or 0)) < 0.05:
+            continue   # joueur de JPL (ou ligue sans decalage) : meme valeur que la ligne au-dessus
         pct = d.get(cle_pct)
         lignes.append({"indicateur": libelle, "valeur": fmt.format(val),
                        "percentile": float(pct) if pct is not None and pd.notna(pct) and pct >= 0 else None,
