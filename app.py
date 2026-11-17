@@ -2613,6 +2613,61 @@ def section_cpa(j) -> None:
                 st.caption("⚠ Trop peu d'actions pour un score fiable : percentiles à titre indicatif.")
 
 
+# Detail sol / aerien (Etude_Pression_Passes/10_hauteur.py, 17/11/2026, Alex) : option de la fiche, sous le
+# bloc « Sous pression ». Passe au sol = LOW_PASS/LOW_CROSS ; aerienne = piquee, diagonale, courte aerienne,
+# centre haut ; reception selon la hauteur du ballon recu. Fidelite saison (matchs pairs/impairs, A POSTE
+# EGAL, 103 championnats 25/26, cf. hauteur_fiabilite.parquet) : passe sol 0,76, passe air 0,59, reception
+# sol 0,75, reception air 0,61, reussite au sol sous pression 0,57, part aerienne sous pression 0,50.
+# Non montrees : reussite AERIENNE sous pression (0,19 en JPL = bruit) et ecart aerien presse - libre (0,39).
+PRESSION_HAUTEUR_LIGNES = [
+    ("pct_pression_passe_sol", "pression_passe_sol", "Pression subie à la passe — au sol", "{:.1f}",
+     "Pression adverse moyenne (0-100) sur ses passes au sol. À partir de 80 passes."),
+    ("pct_pression_passe_air", "pression_passe_air", "Pression subie à la passe — aérienne", "{:.1f}",
+     "Même mesure sur ses passes aériennes (piquées, diagonales, centres hauts). À partir de 30 passes."),
+    ("pct_part_air_fp", "part_air_fp", "Passes aériennes quand il est pressé", "{:.0f} %",
+     "Sous forte pression (≥ 50), part de ses passes jouées en l'air. Haut = il dégage ou allonge ; "
+     "bas = il garde le ballon au sol. Fidélité 0,50 : une tendance."),
+    ("pct_reussite_fp_sol_pct", "reussite_fp_sol_pct", "Réussite au sol sous pression", "{:.0f} %",
+     "Réussite brute de ses passes au sol sous forte pression. Indicatif : fidélité 0,57, et "
+     "non corrigée de la zone ni de la distance."),
+    ("pct_pression_reception_sol", "pression_reception_sol", "Pression subie à la réception — au sol", "{:.1f}",
+     "Pression adverse moyenne quand il reçoit un ballon au sol."),
+    ("pct_pression_reception_air", "pression_reception_air", "Pression subie à la réception — aérienne", "{:.1f}",
+     "Pression adverse moyenne quand il reçoit un ballon aérien. À partir de 20 réceptions."),
+]
+
+
+def section_pression_hauteur(d, reduit: bool) -> None:
+    """Option « Détail sol / aérien » du bloc Sous pression : descriptif, hors score."""
+    if "pression_passe_sol" not in d.index:
+        return
+    lignes = []
+    for cle_pct, cle_val, libelle, fmt, aide in PRESSION_HAUTEUR_LIGNES:
+        val = d.get(cle_val)
+        if val is None or pd.isna(val):
+            continue
+        pct = d.get(cle_pct)
+        lignes.append({"indicateur": libelle, "valeur": fmt.format(val),
+                       "percentile": float(pct) if pct is not None and pd.notna(pct) and pct >= 0 else None,
+                       "lecture": aide})
+    if not lignes:
+        return
+    if not st.toggle("Détail sol / aérien", key=f"pression_hauteur_{d['playerId']}_{d['iterationId']}",
+                     help="Sépare la pression selon la hauteur du ballon : passes et réceptions au sol "
+                          "ou aériennes. Percentiles par poste parmi les joueurs mesurés."):
+        return
+    st.dataframe(pd.DataFrame(lignes), hide_index=True, width="stretch",
+                 column_config={
+                     "indicateur": st.column_config.TextColumn("Indicateur"),
+                     "valeur": st.column_config.TextColumn("Valeur", width="small"),
+                     "percentile": st.column_config.ProgressColumn(
+                         "Percentile du poste", min_value=0, max_value=100, format="P%.0f"),
+                     "lecture": st.column_config.TextColumn("Comment le lire", width="large")})
+    st.caption("Pas de réussite des passes aériennes sous pression : mesure trop instable d'une moitié de "
+               "saison à l'autre (fidélité 0,19)."
+               + (" Moins de 900 minutes : à lire comme une tendance." if reduit else ""))
+
+
 def section_pression(j) -> None:
     """Bloc « Sous pression » : descriptif, hors score.
 
@@ -2669,6 +2724,8 @@ def section_pression(j) -> None:
                      "percentile": st.column_config.ProgressColumn(
                          "Percentile du poste", min_value=0, max_value=100, format="P%.0f"),
                      "lecture": st.column_config.TextColumn("Comment le lire", width="large")})
+
+    section_pression_hauteur(d, reduit)
 
     # Contexte de traduction : pression subie a ce poste ici vs en JPL, meme jeu de saisons.
     try:

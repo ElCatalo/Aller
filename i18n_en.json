@@ -730,7 +730,23 @@
 "0-100, 50 = moyen. Ramené vers 50 quand l'échantillon est petit ; vide si fiabilité faible.": "0-100, 50 = average. Pulled toward 50 for small samples; empty when reliability is low.",
 "Fiabilité pas encore mesurable : pas assez de joueurs avec assez d'actions.": "Reliability not measurable yet: not enough players with enough actions.",
 "Passe au sol (pertes rapportées aux passes)": "Low pass (losses per pass)",
-"Passe diagonale (pertes rapportées aux passes)": "Diagonal pass (losses per pass)"
+"Passe diagonale (pertes rapportées aux passes)": "Diagonal pass (losses per pass)",
+"Détail sol / aérien": "Ground / aerial detail",
+"Sépare la pression selon la hauteur du ballon : passes et réceptions au sol ou aériennes. Percentiles par poste parmi les joueurs mesurés.": "Splits pressure by ball height: ground or aerial passes and receptions. Percentiles by position among measured players.",
+"Pression subie à la passe — au sol": "Pressure faced when passing — ground",
+"Pression adverse moyenne (0-100) sur ses passes au sol. À partir de 80 passes.": "Average opponent pressure (0-100) on his ground passes. From 80 passes.",
+"Pression subie à la passe — aérienne": "Pressure faced when passing — aerial",
+"Même mesure sur ses passes aériennes (piquées, diagonales, centres hauts). À partir de 30 passes.": "Same measure on his aerial passes (chipped, diagonal, high crosses). From 30 passes.",
+"Passes aériennes quand il est pressé": "Aerial passes when pressed",
+"Réussite au sol sous pression": "Ground pass success under pressure",
+"Pression subie à la réception — au sol": "Pressure faced when receiving — ground",
+"Pression adverse moyenne quand il reçoit un ballon au sol.": "Average opponent pressure when he receives a ground ball.",
+"Pression subie à la réception — aérienne": "Pressure faced when receiving — aerial",
+"Pression adverse moyenne quand il reçoit un ballon aérien. À partir de 20 réceptions.": "Average opponent pressure when he receives an aerial ball. From 20 receptions.",
+"Pas de réussite des passes aériennes sous pression : mesure trop instable d'une moitié de saison à l'autre (fidélité 0,19).": "No aerial pass success under pressure: too unstable from one half-season to the other (reliability 0.19).",
+"Pas de réussite des passes aériennes sous pression : mesure trop instable d'une moitié de saison à l'autre (fidélité 0,19). Moins de 900 minutes : à lire comme une tendance.": "No aerial pass success under pressure: too unstable from one half-season to the other (reliability 0.19). Under 900 minutes: read as a trend.",
+"Sous forte pression (≥ 50), part de ses passes jouées en l'air. Haut = il dégage ou allonge ; bas = il garde le ballon au sol. Fidélité 0,50 : une tendance.": "Under high pressure (≥ 50), share of his passes played in the air. High = he clears or goes long; low = he keeps the ball on the ground. Reliability 0.50: a trend.",
+"Réussite brute de ses passes au sol sous forte pression. Indicatif : fidélité 0,57, et non corrigée de la zone ni de la distance.": "Raw success of his ground passes under high pressure. Indicative: reliability 0.57, not adjusted for zone or distance."
 },
 "f": [
 [
