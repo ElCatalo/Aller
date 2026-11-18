@@ -1013,7 +1013,8 @@ def detail_pilier(cle: tuple, arch, choix) -> None:
         "centile": st.column_config.ProgressColumn("centile", min_value=0, max_value=100, format="%d"),
         "poids": st.column_config.NumberColumn("poids", format="%d %%")})
     st.caption("Centile : rang dans le pool de référence du poste (plateforme V10), 100 = meilleur, "
-               "déjà inversé quand une valeur basse est meilleure. Valeur brute : saison, par 90 min ou ratio, comme Impect.")
+               "déjà inversé quand une valeur basse est meilleure. Valeur brute : saison, par 90 min ou ratio, comme Impect. "
+               "Les ratios « minutes de jeu par … » sont en minutes : plus bas = mieux (ex. 235 = 1 xG toutes les 235 min, soit 0,38 xG par 90).")
 
 
 def noms_piliers(serie: pd.Series, archetypes=None) -> pd.Series:

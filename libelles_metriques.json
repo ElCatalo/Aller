@@ -51,7 +51,7 @@
  "RATIO_ADDED_TEAMMATES_DEFENDERS": "Ratio - interventions de la dernière chance",
  "RATIO_AERIAL_DUELS_DEFENSIVE": "Duels aériens gagnés en défense (%)",
  "RATIO_AERIAL_DUELS_OFFENSIVE": "Duels aériens gagnés en attaque (%)",
- "RATIO_MINUTES_PER_SHOT_XG": "xG des tirs (par match)",
+ "RATIO_MINUTES_PER_SHOT_XG": "Ratio minutes de jeu par xG produit (en minutes : temps pour cumuler 1 xG)",
  "RATIO_POSTSHOT_XG_SHOT_XG": "Qualité de frappe (xG après tir / xG)",
  "RATIO_REMOVED_OPPONENTS": "Ratio - interventions offensives",
  "RATIO_REMOVED_OPPONENTS_DEFENDERS": "Ratio - récupérations offensives (des défenseurs)",
