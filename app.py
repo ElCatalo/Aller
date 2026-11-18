@@ -2538,6 +2538,7 @@ CPA_PILIERS = [
         ("xg", "xg", "xG créé par centre", "{:.3f}", "xG des tirs de son équipe dans les 5 s qui suivent le centre."),
         ("contact", "contact", "1er contact gagné", "{:.0%}", "Part des centres dont un coéquipier gagne le premier contact."),
         ("tir", "tir", "Tir obtenu", "{:.0%}", "Part des centres suivis d'un tir dans les 5 s."),
+        ("but", "but_taux", "Buts par centre", "{:.1%}", "Part des centres suivis d'un but dans les 5 s."),
         ("pxt", "pxt", "pxT par centre", "{:.4f}", "Menace gagnée (pxT positif Impect) sur la séquence du centre."),
         ("volume", "par90", "Centres par 90", "{:.2f}", "Combien de centres CPA il tire : est-il le tireur désigné ?"),
     ]),
@@ -2545,6 +2546,7 @@ CPA_PILIERS = [
         ("xg", "xg", "xG de ses tirs par ballon", "{:.3f}", "xG de ses propres tirs dans les 5 s (tête ou pied)."),
         ("duel", "duel", "Duels aériens gagnés", "{:.0%}", "Sur ces ballons, part des duels aériens gagnés."),
         ("contact", "contact", "1er contact gagné", "{:.0%}", "Part des ballons où il fait lui-même le premier contact."),
+        ("but", "but_taux", "Buts par tir", "{:.0%}", "Part de ses tirs (dans les 5 s d'un ballon CPA) qui finissent au fond."),
         ("volume", "par90", "Ballons par 90", "{:.2f}", "Combien de ballons CPA offensifs il dispute : est-il une cible ?"),
     ]),
     ("rec_def", "Receveur défensif", "ballons adverses où il est impliqué", [
@@ -2556,6 +2558,7 @@ CPA_PILIERS = [
         ("qualite", "qualite", "xG post-tir − xG", "{:+.3f}", "Qualité de frappe : ce que vaut le tir une fois frappé, moins ce que valait la position. Hors cadre = −xG."),
         ("cadre", "cadre", "Tirs cadrés", "{:.0%}", "Part des coups francs directs cadrés."),
         ("buts_xg", "buts_xg", "Buts − xG par tir", "{:+.3f}", "Réussite au-delà de l'attendu."),
+        ("but", "but_taux", "Buts par coup franc direct", "{:.1%}", "Part des coups francs directs marqués."),
         ("xg", "xg", "xG moyen", "{:.3f}", "Difficulté moyenne des positions de frappe."),
     ]),
 ]
@@ -2623,6 +2626,10 @@ def section_cpa(j) -> None:
             extra = []
             if cle == "centreur" and pd.notna(d.get(pre + "n_corners")):
                 extra.append(f"{int(d[pre + 'n_corners'])} corners, {int(d[pre + 'n'] - d[pre + 'n_corners'])} coups francs")
+            if cle == "centreur" and pd.notna(d.get(pre + "buts")):
+                extra.append(f"{int(d[pre + 'buts'])} centre(s) suivi(s) d'un but")
+            if cle == "rec_off" and pd.notna(d.get(pre + "buts")) and pd.notna(d.get(pre + "tirs")):
+                extra.append(f"{int(d[pre + 'buts'])} but(s) sur {int(d[pre + 'tirs'])} tir(s)")
             if cle in ("rec_off", "rec_def") and pd.notna(d.get(pre + "duels")):
                 extra.append(f"{d[pre + 'duels']:.0f} duels aériens (pondérés)")
             if cle == "cfd" and pd.notna(d.get(pre + "buts")):
@@ -2839,6 +2846,7 @@ TERRAIN_L, TERRAIN_l = 105.0, 68.0
 HEATMAP_MODES = {"Toutes les actions": ("off", "def"), "Offensives": ("off",), "Défensives": ("def",)}
 HEATMAP_DEFAUT = "Toutes les actions"
 # Une seule teinte, du papier de la page au sarcelle fonce : c'est une intensite.
+HEATMAP_GAMMA = 0.75     # < 1 : releve les intensites moyennes (0,2 -> 0,30 ; 0,5 -> 0,59)
 HEATMAP_ECHELLE = [[0.0, "#FBFBF9"], [0.12, "#E3EEEC"], [0.35, "#A3C9C4"], [0.6, "#5A9E98"],
                    [0.8, "#1F6F6B"], [1.0, "#0D3F3C"]]
 # Limites des zones Impect, en metres depuis le centre du terrain.
@@ -2931,6 +2939,9 @@ def graphe_heatmap(g: np.ndarray) -> go.Figure:
     nx, ny = g.shape
     z = _lisser(g, _lissage_cases(int(g.sum())))
     z = z / z.max() if z.max() > 0 else z
+    # 18/11/2026 (Alex) : un peu moins de poids aux concentrations. Une zone moins dense mais
+    # reguliere (ex. demi-espace d'un lateral inverse) ressort davantage ; le pic reste le plus fonce.
+    z = z ** HEATMAP_GAMMA
     xs = (np.arange(nx) + 0.5) * TERRAIN_L / nx - TERRAIN_L / 2
     ys = (np.arange(ny) + 0.5) * TERRAIN_l / ny - TERRAIN_l / 2
     fig = go.Figure(go.Heatmap(
@@ -4133,13 +4144,13 @@ with (onglet_mon if MONITORING else
                     "Par 90", format="%.1f", help="Ballons aériens disputés dans la zone par 90 minutes."),
                 "cpa_centreur_score": st.column_config.ProgressColumn(
                     "Centreur CPA", min_value=0, max_value=100, format="%.0f",
-                    help='Centreur sur coups de pied arrêtés (0-100, 50 = moyen) : centres directs sur corner et coups francs indirects centrés, jeu court exclu. xG des tirs dans les 5 s, 1er contact gagné par un coéquipier, tir obtenu, pxT, volume. Toute la carrière (saisons récentes plus lourdes). Vide si trop peu de centres pour un score fiable. Indicatif, hors score.'),
+                    help='Centreur sur coups de pied arrêtés (0-100, 50 = moyen) : centres directs sur corner et coups francs indirects centrés, jeu court exclu. xG des tirs dans les 5 s, 1er contact gagné par un coéquipier, tir obtenu, buts par centre, pxT, volume. Toute la carrière (saisons récentes plus lourdes). Vide si trop peu de centres pour un score fiable. Indicatif, hors score.'),
                 "cpa_receveur_score": st.column_config.ProgressColumn(
                     "Receveur aérien CPA", min_value=0, max_value=100, format="%.0f",
-                    help='Receveur aérien sur coups de pied arrêtés (0-100, 50 = moyen) : 60 % offensif (xG de ses tirs, duels aériens, 1er contact sur corners, coups francs centrés, touches longues) + 40 % défensif (duels aériens, 1er contact sur les CPA adverses). Seuls les volets fiables comptent. Toute la carrière. Indicatif, hors score.'),
+                    help='Receveur aérien sur coups de pied arrêtés (0-100, 50 = moyen) : 60 % offensif (xG de ses tirs, buts par tir, duels aériens, 1er contact sur corners, coups francs centrés, touches longues) + 40 % défensif (duels aériens, 1er contact sur les CPA adverses). Seuls les volets fiables comptent. Toute la carrière. Indicatif, hors score.'),
                 "cpa_cfd_score": st.column_config.ProgressColumn(
                     "Coup franc direct", min_value=0, max_value=100, format="%.0f",
-                    help='Tireur de coup franc direct (0-100, 50 = moyen) : qualité de frappe (xG post-tir − xG), % cadrés, buts − xG, xG moyen. Penalties exclus. Toute la carrière. Vide si trop peu de tirs. Indicatif, hors score.'),
+                    help='Tireur de coup franc direct (0-100, 50 = moyen) : qualité de frappe (xG post-tir − xG), % cadrés, buts − xG, buts par coup franc, xG moyen. Penalties exclus. Toute la carrière. Vide si trop peu de tirs. Indicatif, hors score.'),
                 "fiab_cpa": st.column_config.TextColumn(
                     "Fiabilité CPA", help="Fiabilité de chaque pilier CPA, mesurée séparément : bonne, moy. (moyenne) ou – (trop peu d'actions, score masqué). Récep. = offensif/défensif."),
                 "pivot_fiabilite_classe": st.column_config.TextColumn(
