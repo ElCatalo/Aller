@@ -2561,6 +2561,12 @@ CPA_PILIERS = [
         ("but", "but_taux", "Buts par coup franc direct", "{:.1%}", "Part des coups francs directs marqués."),
         ("xg", "xg", "xG moyen", "{:.3f}", "Difficulté moyenne des positions de frappe."),
     ]),
+    # 18/11/2026 (Alex) : penaltys, lecture informative (pas de score : trop peu de tirs par joueur).
+    ("pen", "Penaltys", "penaltys tirés", [
+        ("but", "but_taux", "Penaltys marqués", "{:.0%}", "Part des penaltys transformés (moyenne des tireurs ≈ 75 %). Percentile corrigé du petit échantillon."),
+        ("cadre", "cadre", "Penaltys cadrés", "{:.0%}", "Part des penaltys cadrés, arrêtés compris."),
+        ("qualite", "qualite", "xG post-tir − xG", "{:+.3f}", "Placement : ce que vaut la frappe une fois tirée moins l'xG d'un penalty (0,78). Hors cadre = −0,78."),
+    ]),
 ]
 
 
@@ -2599,8 +2605,12 @@ def section_cpa(j) -> None:
             k = float(ks.iloc[0]) if len(ks) and pd.notna(ks.iloc[0]) and np.isfinite(ks.iloc[0]) else None
             classe = str(d.get(pre + "fiabilite_classe") or "faible")
             c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Score", n_(d.get(pre + "score"), "{:.0f}"),
-                      help="0-100, 50 = moyen. Ramené vers 50 quand l'échantillon est petit ; vide si fiabilité faible.")
+            if cle == "pen":   # pas de score affiche : buts / tires
+                c1.metric("Buts", f"{int(d.get(pre + 'buts') or 0)} / {int(d[pre + 'n'])}",
+                          help="Penaltys marqués / tirés, toute la carrière disponible.")
+            else:
+                c1.metric("Score", n_(d.get(pre + "score"), "{:.0f}"),
+                          help="0-100, 50 = moyen. Ramené vers 50 quand l'échantillon est petit ; vide si fiabilité faible.")
             c2.metric("Actions", f"{int(d[pre + 'n'])}", help=f"Nombre de {unite}.")
             c3.metric("Matchs / saisons", f"{int(d[pre + 'matchs'])} / {int(d[pre + 'saisons'])}")
             c4.metric("Fiabilité", classe.capitalize(),
@@ -2632,9 +2642,11 @@ def section_cpa(j) -> None:
                 extra.append(f"{int(d[pre + 'buts'])} but(s) sur {int(d[pre + 'tirs'])} tir(s)")
             if cle in ("rec_off", "rec_def") and pd.notna(d.get(pre + "duels")):
                 extra.append(f"{d[pre + 'duels']:.0f} duels aériens (pondérés)")
+            if cle == "pen":
+                extra.append("Penaltys obtenus : non disponibles dans cette source")
             if cle == "cfd" and pd.notna(d.get(pre + "buts")):
                 extra.append(f"{int(d[pre + 'buts'])} but(s)")
-            if pd.notna(d.get(pre + "score_brut")):
+            if cle != "pen" and pd.notna(d.get(pre + "score_brut")):
                 extra.append(f"score brut {d[pre + 'score_brut']:.0f}" + (" (indicatif : fiabilité faible)" if classe == "faible" else ""))
             if extra:
                 st.caption(" · ".join(extra) + ".")

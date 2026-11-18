@@ -753,7 +753,14 @@
 "Buts par tir": "Goals per shot",
 "Part de ses tirs (dans les 5 s d'un ballon CPA) qui finissent au fond.": "Share of his shots (within 5 s of a set-piece ball) that end in the net.",
 "Buts par coup franc direct": "Goals per direct free kick",
-"Part des coups francs directs marqués.": "Share of direct free kicks scored."
+"Part des coups francs directs marqués.": "Share of direct free kicks scored.",
+"Penaltys": "Penalties",
+"Penaltys marqués": "Penalties scored",
+"Part des penaltys transformés (moyenne des tireurs ≈ 75 %). Percentile corrigé du petit échantillon.": "Share of penalties converted (takers' average ≈ 75%). Percentile adjusted for small samples.",
+"Penaltys cadrés": "Penalties on target",
+"Part des penaltys cadrés, arrêtés compris.": "Share of penalties on target, saved ones included.",
+"Placement : ce que vaut la frappe une fois tirée moins l'xG d'un penalty (0,78). Hors cadre = −0,78.": "Placement: what the strike is worth once taken minus a penalty's xG (0.78). Off target = −0.78.",
+"Penaltys marqués / tirés, toute la carrière disponible.": "Penalties scored / taken, whole available career."
 },
 "f": [
 [
@@ -1649,6 +1656,10 @@
 [
 "(\\d+) but\\(s\\) sur (\\d+) tir\\(s\\)",
 "\\1 goal(s) from \\2 shot(s)"
+],
+[
+"Penaltys obtenus : non disponibles dans cette source",
+"Penalties won: not available in this source"
 ]
 ],
 "h": [
