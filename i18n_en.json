@@ -760,7 +760,8 @@
 "Penaltys cadrés": "Penalties on target",
 "Part des penaltys cadrés, arrêtés compris.": "Share of penalties on target, saved ones included.",
 "Placement : ce que vaut la frappe une fois tirée moins l'xG d'un penalty (0,78). Hors cadre = −0,78.": "Placement: what the strike is worth once taken minus a penalty's xG (0.78). Off target = −0.78.",
-"Penaltys marqués / tirés, toute la carrière disponible.": "Penalties scored / taken, whole available career."
+"Penaltys marqués / tirés, toute la carrière disponible.": "Penalties scored / taken, whole available career.",
+"Buts − xG hors penalty (par 90 min)": "Non-penalty goals − xG (per 90 min)"
 },
 "f": [
 [

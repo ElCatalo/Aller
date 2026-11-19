@@ -62,5 +62,6 @@
  "TOTAL_TOUCHES_IN_PACKING_ZONE_IB": "Touches, surface adverse",
  "DEFENSIVE_HEADER_SCORE": "Tête défensive",
  "LOW_PASS_SCORE_CORR": "Passe au sol (pertes rapportées aux passes)",
- "DIAGONAL_PASS_SCORE_CORR": "Passe diagonale (pertes rapportées aux passes)"
+ "DIAGONAL_PASS_SCORE_CORR": "Passe diagonale (pertes rapportées aux passes)",
+ "NP_GOALS_MINUS_NPXG": "Buts − xG hors penalty (par 90 min)"
 }
