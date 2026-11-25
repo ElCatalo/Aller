@@ -4169,6 +4169,7 @@ TRI_FEUX = {   # code en base -> (en-tete de colonne, aide)
 }
 FEUX = {"vert": "🟢", "orange": "🟠", "rouge": "🔴"}
 FEU_DE_PICTO = {v: k for k, v in FEUX.items()}
+FEU_VALEUR = {"rouge": 0, "orange": 1, "vert": 2}   # total des 3 feux : 0 a 6
 
 
 def tri_feux(player_ids) -> pd.DataFrame:
@@ -4879,6 +4880,25 @@ def vue_listes() -> None:
     st.markdown(f"#### Listes · {arch} — {ARCHETYPES[arch]}")
     _bloc_screening()
     places = tri_places(arch).rename(columns={"nom": "nom_liste", "club": "club_liste"})
+    # Feux et leur total (🔴 0, 🟠 1, 🟢 2 ; total vide si aucun feu pose), puis filtres.
+    places = places.merge(tri_feux(places["playerId"]), on="playerId", how="left")
+    _vals = pd.DataFrame({c_: places[f"feu_{c_}"].map(FEU_VALEUR) for c_ in TRI_FEUX})
+    places["feux_total"] = _vals.sum(axis=1, min_count=1)
+    filtre_feux = False
+    f_cols = st.columns([1, 1, 1, 1.5], vertical_alignment="bottom")
+    for col, (crit, (ent, aide)) in zip(f_cols, TRI_FEUX.items()):
+        choix = col.pills(ent, [*FEUX, "aucun"], selection_mode="multi", key=f"tri_ffeu_{crit}",
+                          format_func=lambda k: FEUX.get(k, "∅"),
+                          help=f"{tr(aide)} {tr('Vide : tous. ∅ = pas encore de feu.')}")
+        if choix:
+            places = places[places[f"feu_{crit}"].fillna("aucun").isin(choix)]
+            filtre_feux = True
+    tot = f_cols[3].slider("Total des 3 feux", 0, 6, (0, 6), key="tri_ftot",
+                           help="🔴 = 0, 🟠 = 1, 🟢 = 2 : somme des feux posés (6 = trois verts). Dès que le "
+                                "curseur est réglé, les joueurs sans aucun feu sont retirés.")
+    if tuple(tot) != (0, 6):
+        places = places[places["feux_total"].between(*tot)]
+        filtre_feux = True
     vivant = tri_enrichir(tuple(places["playerId"].tolist()), arch)
     st.caption(f"**{len(places)}** joueur{'s' if len(places) > 1 else ''} classé{'s' if len(places) > 1 else ''} à "
                "ce poste. Les listes ne suivent pas les filtres de la barre latérale ; les valeurs sont celles "
@@ -4890,7 +4910,8 @@ def vue_listes() -> None:
         with ong:
             df = places[places["categorie"] == code]
             if df.empty:
-                st.info("Liste vide : classe des joueurs depuis Trier ou Alertes.")
+                st.info("Aucun joueur de cette liste ne correspond aux filtres des feux." if filtre_feux
+                        else "Liste vide : classe des joueurs depuis Trier ou Alertes.")
                 continue
             if not vivant.empty:
                 df = df.merge(vivant, on="playerId", how="left")
@@ -4908,12 +4929,12 @@ def vue_listes() -> None:
             df = df.sort_values("score", ascending=False, na_position="last").reset_index(drop=True)
             # 25/11/2026 : 3 feux juste a droite du nom (modifiables ici), pays et niveau
             # passes a droite, case « ✓ » pour choisir les lignes (le tableau est editable).
-            df = df.merge(tri_feux(df["playerId"]), on="playerId", how="left")
-            feux_cols = [f"feu_{c_}" for c_ in TRI_FEUX]
+            feux_cols = [f"feu_{c_}" for c_ in TRI_FEUX]   # codes lus avec places, montres en pictos
             for c_ in feux_cols:
                 df[c_] = df[c_].map(FEUX).astype(object).where(df[c_].map(FEUX).notna(), None)
             df.insert(0, "choisir", False)
-            colonnes = [c_ for c_ in ["choisir", "nom", *feux_cols, "age", "club", "competition", "saison",
+            colonnes = [c_ for c_ in ["choisir", "nom", *feux_cols, "feux_total", "age", "club", "competition",
+                                      "saison",
                                       "score", "profil_principal",
                                       ("score_v8" if SC == "qualite_actuelle" else "qualite"),
                                       "contrat_fin", "minutes", "pied_fort", "performance", "progression",
@@ -4930,6 +4951,10 @@ def vue_listes() -> None:
                     **{f"feu_{c_}": st.column_config.SelectboxColumn(ent, options=list(FEUX.values()),
                                                                      width="small", help=aide)
                        for c_, (ent, aide) in TRI_FEUX.items()},
+                    "feux_total": st.column_config.NumberColumn(
+                        "Σ feux", format="%d", width="small",
+                        help="Total des 3 feux : 🔴 = 0, 🟠 = 1, 🟢 = 2 (6 = trois verts). Vide : aucun feu posé. "
+                             "Clique l'en-tête pour trier."),
                     "score": st.column_config.ProgressColumn(COURT, min_value=0, max_value=120, format="%.1f",
                                                              width="small",
                                                              help=f"{tr(lecture)} — {tr(LECTURES[lecture]['aide'])}"),
@@ -4949,10 +4974,14 @@ def vue_listes() -> None:
                     "classe_le": st.column_config.DatetimeColumn("Classé le", format="DD/MM/YYYY"),
                 })
             # Feux changes dans le tableau : enregistres tout de suite, pour tous les comptes.
+            n_feux = 0
             for c_ in TRI_FEUX:
                 k_ = f"feu_{c_}"
                 for i in np.flatnonzero((ev[k_].fillna("") != df[k_].fillna("")).to_numpy()):
                     tri_feu_poser(df.iloc[i]["playerId"], c_, FEU_DE_PICTO.get(ev.iloc[i][k_]))
+                    n_feux += 1
+            if n_feux:
+                st.rerun()    # total des feux et filtres recalcules avec le nouveau feu
             sel = [int(i) for i in np.flatnonzero(ev["choisir"].fillna(False).astype(bool).to_numpy())]
             ids_sel = [int(df.iloc[i]["playerId"]) for i in sel]
             a1, a2, a3, a4 = st.columns([2, 1.1, 1.1, 1.3], vertical_alignment="bottom")

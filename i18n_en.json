@@ -850,7 +850,13 @@
 "Le passage en Jupiler Pro League est-il logique pour lui maintenant : niveau du championnat d'où il vient et moment de sa carrière (step trop grand, adapté ou recul).": "Does a move to the Jupiler Pro League make sense for him now: level of the league he comes from and stage of his career (step too big, right, or a step back).",
 "Cocher pour déplacer, ouvrir la fiche ou noter.": "Tick to move, open the profile or add a note.",
 "Coche des lignes (✓) pour les déplacer ; une seule ligne pour ouvrir sa fiche ou la noter. Feux : clique une case 🟢🟠🔴 pour la remplir ; enregistré pour tous les comptes, modifiable aussi depuis la fiche complète du joueur.": "Tick rows (✓) to move them; a single row to open its profile or add a note. Lights: click a 🟢🟠🔴 cell to fill it in; saved for all accounts, also editable from the player's full profile.",
-"**🚦 Feux de la liste**": "**🚦 List lights**"
+"**🚦 Feux de la liste**": "**🚦 List lights**",
+"Vide : tous. ∅ = pas encore de feu.": "Empty: all. ∅ = no light yet.",
+"Total des 3 feux": "Total of the 3 lights",
+"🔴 = 0, 🟠 = 1, 🟢 = 2 : somme des feux posés (6 = trois verts). Dès que le curseur est réglé, les joueurs sans aucun feu sont retirés.": "🔴 = 0, 🟠 = 1, 🟢 = 2: sum of the lights set (6 = three greens). As soon as the slider is moved, players without any light are removed.",
+"Σ feux": "Σ lights",
+"Total des 3 feux : 🔴 = 0, 🟠 = 1, 🟢 = 2 (6 = trois verts). Vide : aucun feu posé. Clique l'en-tête pour trier.": "Total of the 3 lights: 🔴 = 0, 🟠 = 1, 🟢 = 2 (6 = three greens). Empty: no light set. Click the header to sort.",
+"Aucun joueur de cette liste ne correspond aux filtres des feux.": "No player in this list matches the light filters."
 },
 "f": [
 [
