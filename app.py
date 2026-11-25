@@ -509,6 +509,14 @@ hr{border-color:var(--trait);margin:1.3rem 0;}
 [class*="st-key-tri_nom_"] button{padding:0;min-height:0;justify-content:flex-start;}
 [class*="st-key-tri_nom_"] button p{font-size:1.7rem;font-weight:800;letter-spacing:-.01em;line-height:1.15;text-align:left;}
 [class*="st-key-tri_nom_"] button:hover p{text-decoration:underline;}
+/* fiche resume (25/11, retour d'Alex) : cases plus petites, les 3 de tete un cran au-dessus, lignes serrees */
+[class*="st-key-tri_carte_"] [data-testid="stMetricValue"]{font-size:1.15rem;}
+[class*="st-key-tri_carte_"] [data-testid="stMetricLabel"] p{font-size:.74rem;}
+[class*="st-key-tri_carte_"] [data-testid="stMetricDelta"]{font-size:.72rem;}
+[class*="st-key-tri_carte_"] [data-testid="stMetric"]{padding:.15rem 0;}
+[class*="st-key-tri_carte_"] [class*="st-key-tri_tete_"] [data-testid="stMetricValue"]{font-size:1.55rem;}
+[class*="st-key-tri_infos_"] p{font-size:.88rem;margin-bottom:.1rem;line-height:1.35;}
+[class*="st-key-tri_infos_"] [data-testid="stVerticalBlock"]{gap:.1rem;}
 /* ecran de connexion : respiration verticale */
 .rcsc-accueil{padding-top:4.5rem;}
 </style>"""
@@ -4342,7 +4350,7 @@ def _graphe_piliers_compact(cle: tuple, arch: str) -> go.Figure | None:
         customdata=piliers["poids"] * 100,
         hovertemplate="%{y} : percentile %{x:.0f} · poids %{customdata:.0f} %<extra></extra>"))
     fig.add_vline(x=50, line_dash="dot", line_color="#999")
-    fig.update_layout(height=max(230, 27 * len(piliers) + 50), margin=dict(l=0, r=26, t=28, b=0),
+    fig.update_layout(height=max(210, 24 * len(piliers) + 44), margin=dict(l=0, r=26, t=28, b=0),
                       xaxis=dict(range=[0, 108], showgrid=False, title=None, tickvals=[0, 25, 50, 75, 100]),
                       yaxis=dict(autorange="reversed", title=None), showlegend=False,
                       title=dict(text="Piliers · percentile du poste", font=dict(size=13)))
@@ -4403,14 +4411,88 @@ def _tri_ouvrir(j) -> None:
     ouvrir_fiche(j.playerId, j.squadId, j.iterationId, j.position, j.archetype_courant)
 
 
+def _pc(v) -> str:
+    """Percentile ou score 0-100 colore : vert >= 70, rouge <= 30, « – » si absent."""
+    if v is None or pd.isna(v):
+        return "–"
+    t = f"{float(v):.0f}"
+    return f":green[**{t}**]" if v >= 70 else (f":red[**{t}**]" if v <= 30 else f"**{t}**")
+
+
+def _lignes_compactes(j, cle: tuple) -> list[str]:
+    """Une ligne chacun : jeu sous pression, CPA, pivot aerien (9), gros matchs.
+    Lectures de la fiche complete, resumees ; chiffres = percentiles ou scores 0-100."""
+    arch = cle[4]
+    try:
+        x = requete("""SELECT pct_part_prog_fp, pct_reussite_fp_vs_attendu_100, pct_bypassed_vs_attendu_p90,
+                adv_ecart_haut, adv_ecart_haut_percentile
+            FROM v_joueurs WHERE playerId=? AND squadId=? AND iterationId=? AND position=? AND archetype=?""", cle)
+    except duckdb.Error:
+        x = pd.DataFrame()
+    x = x.iloc[0] if not x.empty else None
+    lignes = []
+    # Jeu sous pression (Etude_Pression_Passes) : percentiles du poste, une centaine de championnats.
+    if x is not None and arch != "GK" and any(pd.notna(x[c]) for c in
+                                              ("pct_part_prog_fp", "pct_reussite_fp_vs_attendu_100",
+                                               "pct_bypassed_vs_attendu_p90")):
+        lignes.append(f"**Sous pression** : progresse {_pc(x.pct_part_prog_fp)} · résiste "
+                      f"{_pc(x.pct_reussite_fp_vs_attendu_100)} · élimine {_pc(x.pct_bypassed_vs_attendu_p90)}")
+    # Piliers CPA (indicatifs, hors score) : score vide quand la fiabilite du pilier est faible.
+    if arch != "GK" and "cpa_centreur_score" in j.index:
+        cpa = [(lab, j.get(c)) for lab, c in (("centreur", "cpa_centreur_score"),
+                                              ("receveur aérien", "cpa_receveur_score"),
+                                              ("coup franc direct", "cpa_cfd_score"))]
+        if any(pd.notna(v) for _, v in cpa):
+            lignes.append(f"**CPA** : centreur {_pc(cpa[0][1])} · receveur aérien {_pc(cpa[1][1])} · "
+                          f"coup franc direct {_pc(cpa[2][1])}")
+        else:
+            lignes.append("**CPA** : trop peu d'actions pour une lecture fiable")
+    # Pivot aerien (avant-centres seulement), score en beta.
+    if arch == "NINE" and "pivot_score" in j.index and pd.notna(j.get("pivot_score")):
+        lignes.append(f"**Pivot aérien** : {_pc(j.pivot_score)} · fiabilité "
+                      f"{tr(str(j.get('pivot_fiabilite_classe') or '–'))}")
+    # Gros matchs : meme regle que verdict_adversaire (ecart face au top du championnat).
+    if x is not None:
+        e, q = x.adv_ecart_haut, x.adv_ecart_haut_percentile
+        if pd.isna(e) or pd.isna(q):
+            lignes.append("**Gros matchs** : :gray[pas assez de matchs contre le top pour comparer]")
+        else:
+            v = tr(":green[**⬆ meilleur**]" if q >= 75 and e > 0 else
+                 ":orange[**⬇ moins bon**]" if q <= 25 and e < 0 else "**= même niveau**")
+            lignes.append(f"**Gros matchs** : {v} contre le top du championnat ({e:+.0f} pts)")
+    return lignes
+
+
+def _heatmap_compacte(j, cle_widget: str) -> None:
+    """Carte des zones d'action de la saison, en petit (actions par defaut, sans CPA)."""
+    if not HEATMAP_FICHIERS:
+        return
+    h = heatmap_joueur(int(j.playerId), int(j.squadId), int(j.iterationId), j.position)
+    if h is None:
+        st.caption("Pas de carte des zones d'action pour cette saison.")
+        return
+    g = sum(h[c] for c in (HEATMAP_MODES[HEATMAP_DEFAUT] if h["complet"] else ("off",)))
+    if int(g.sum()) == 0:
+        st.caption("Pas de carte des zones d'action pour cette saison.")
+        return
+    fig = graphe_heatmap(g)
+    fig.update_layout(height=210, margin=dict(l=0, r=0, t=26, b=0), annotations=[],
+                      title=dict(text="Zones d'action · saison  ⟶", font=dict(size=13)))
+    st.plotly_chart(fig, width="stretch", key=f"tri_hm_{cle_widget}", config={"displayModeBar": False})
+
+
 def fiche_resume(j, ctx: str, m=None) -> None:
     """Fiche resume d'un joueur, tenant sur un ecran : identite, score, chiffres
     cles, profils, piliers. Un clic sur le nom ouvre la fiche complete.
     m : ligne de la periode du monitoring (Alertes)."""
+    # 25/11/2026 (retour d'Alex) : trois cases en tete (score, percentile, performance),
+    # cases plus petites, plus de ligne point fort / point faible (les piliers le disent),
+    # et en plus, en une ligne chacun : jeu sous pression, CPA, pivot aerien (9), gros
+    # matchs ; carte des zones d'action en petit a droite.
     arch = j.archetype_courant
     cle = (int(j.playerId), int(j.squadId), int(j.iterationId), j.position, arch)
-    with st.container(border=True):
-        t1, t2, t3 = st.columns([3.2, 1, 1])
+    with st.container(border=True, key=f"tri_carte_{ctx}_{cle[0]}"):
+        t1, t2, t3, t4 = st.columns([2.7, 1, 1, 1])
         with t1:
             if st.button(str(j.nom), type="tertiary", key=f"tri_nom_{ctx}_{cle[0]}",
                          help="Ouvrir la fiche complète"):
@@ -4419,47 +4501,47 @@ def fiche_resume(j, ctx: str, m=None) -> None:
             if pd.notna(j.pays):
                 lieu += f" ({j.pays}" + (f", D{int(j.niveau)})" if pd.notna(j.niveau) else ")")
             st.caption(f"{lieu} · {j.saison} · {j.poste} · archétype {arch}")
-        if m is not None:
-            t2.metric("Score période", n_(m.score), f"{int(m.minutes_poste)} min", delta_color="off",
-                      help="Performance sur la période + niveau du club + âge : même échelle que le Score "
-                           "de saison.")
-            t3.metric(f"{COURT} saison", n_(j.score),
-                      f"P{j.percentile:.0f} du poste" if pd.notna(j.percentile) else None, delta_color="off",
-                      help=LECTURES[lecture]["aide"])
-        else:
-            t2.metric(COURT, n_(j.score), f"rang {int(j.rang_mondial)}" if pd.notna(j.rang_mondial) else None,
-                      delta_color="off", help=LECTURES[lecture]["aide"])
-            t3.metric("Percentile", n_(j.percentile, "{:.0f}"), "du poste", delta_color="off",
-                      help="Percentile du joueur à ce poste, toutes ligues.")
-        g, d = st.columns([1.25, 1], gap="medium")
+        # Les trois cases de tete, un cran plus grandes que les autres (CSS st-key-tri_tete_).
+        tete = [(t2, f"{COURT} saison", n_(j.score),
+                 f"rang {int(j.rang_mondial)}" if pd.notna(j.rang_mondial) else None, LECTURES[lecture]["aide"]),
+                (t3, "Percentile saison", n_(j.percentile, "{:.0f}"), "du poste",
+                 "Percentile du joueur à ce poste, toutes ligues."),
+                (t4, "Performance", n_(j.performance), None,
+                 "Performance terrain seule, sans l'ajustement du niveau du club ni de l'âge.")]
+        for k, (col, lab, val, dl, aide) in enumerate(tete):
+            with col, st.container(key=f"tri_tete_{ctx}_{cle[0]}_{k}"):
+                st.metric(lab, val, dl, delta_color="off", help=aide)
+        g, mil, d = st.columns([1.2, 1, 0.9], gap="medium")
         with g:
             _fin = pd.to_datetime(j.get("contrat_fin"), errors="coerce")
-            l1 = [("Qualité actuelle", n_(j.qualite), None), ("Performance", n_(j.performance), None),
-                  ("Âge", n_(j.age), None), ("Minutes", n_(j.minutes, "{:.0f}"), f"{n_(j.matchs, '{:.0f}')} matchs")]
-            l2 = [("Fin de contrat", f"{_fin:%m/%Y}" if pd.notna(_fin) else "—", None),
-                  ("Pied", j.pied_fort or "—", None), ("Taille", n_(j.taille_cm, "{:.0f} cm"), None)]
+            l1 = [("Âge", n_(j.age), None), ("Minutes", n_(j.minutes, "{:.0f}"), f"{n_(j.matchs, '{:.0f}')} matchs"),
+                  ("Fin de contrat", f"{_fin:%m/%Y}" if pd.notna(_fin) else "—", None)]
+            l2 = [("Pied", j.pied_fort or "—", None), ("Taille", n_(j.taille_cm, "{:.0f} cm"), None)]
             if "buts" in j.index and arch in ("NINE", "WG", "TEN") and pd.notna(j.buts):
                 l2.append(("Buts · passes déc.", f"{int(j.buts)} · {int(j.passes_d) if pd.notna(j.passes_d) else 0}",
                            None))
             else:
                 l2.append(("Progression", n_(j.progression, "{:+.1f}"), None))
             for ligne in (l1, l2):
-                for col, (lab, val, dl) in zip(st.columns(4), ligne):
+                for col, (lab, val, dl) in zip(st.columns(3), ligne):
                     col.metric(lab, val, dl, delta_color="off")
-            if prof := _profils_top(cle):
-                st.markdown(f"**Profils RCSC** : {prof}")
-            st.markdown(f"**Point fort** : {nom_pilier(str(j.pilier_fort), arch)} · "
-                        f"**Point faible** : {nom_pilier(str(j.pilier_faible), arch)}")
-            if t_ := _ligne_transferroom(j.playerId):
-                st.markdown(t_)
-            if m is not None:
-                st.markdown(_ligne_periode(m))
-            elif f_ := _forme_recente(cle[0], arch):
-                st.markdown(f_)
-        with d:
+            with st.container(key=f"tri_infos_{ctx}_{cle[0]}"):
+                if prof := _profils_top(cle):
+                    st.markdown(f"**Profils RCSC** : {prof}")
+                for ligne in _lignes_compactes(j, cle):
+                    st.markdown(ligne)
+                if t_ := _ligne_transferroom(j.playerId):
+                    st.markdown(t_)
+                if m is not None:
+                    st.markdown(_ligne_periode(m))
+                elif f_ := _forme_recente(cle[0], arch):
+                    st.markdown(f_)
+        with mil:
             if (fig := _graphe_piliers_compact(cle, arch)) is not None:
                 st.plotly_chart(fig, width="stretch", key=f"tri_fig_{ctx}_{cle}",
                                 config={"displayModeBar": False})
+        with d:
+            _heatmap_compacte(j, f"{ctx}_{cle[0]}")
 
 
 def _carte_minimale(m) -> None:

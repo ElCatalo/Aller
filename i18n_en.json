@@ -827,7 +827,18 @@
 "Coche une ou plusieurs lignes du tableau.": "Tick one or more rows in the table.",
 "📄 Ouvrir la fiche": "📄 Open profile",
 "Coche des lignes pour les déplacer ; une seule ligne pour ouvrir sa fiche ou la noter.": "Tick rows to move them; a single row to open its profile or add a note.",
-"Mise à jour des listes depuis le screening…": "Updating the lists from the screening…"
+"Mise à jour des listes depuis le screening…": "Updating the lists from the screening…",
+"Percentile saison": "Season percentile",
+"Qualité saison": "Season quality",
+"Score hors âge saison": "Season score excl. age",
+"Performance terrain seule, sans l'ajustement du niveau du club ni de l'âge.": "On-pitch performance only, without the club-level or age adjustment.",
+"**CPA** : trop peu d'actions pour une lecture fiable": "**Set pieces**: too few actions for a reliable reading",
+"**Gros matchs** : :gray[pas assez de matchs contre le top pour comparer]": "**Big games**: :gray[not enough games against the top sides to compare]",
+"Pas de carte des zones d'action pour cette saison.": "No action map for this season.",
+"Zones d'action · saison  ⟶": "Action zones · season  ⟶",
+":green[**⬆ meilleur**]": ":green[**⬆ better**]",
+":orange[**⬇ moins bon**]": ":orange[**⬇ worse**]",
+"**= même niveau**": "**= same level**"
 },
 "f": [
 [
@@ -1533,6 +1544,22 @@
 [
 "#### Listes · {0} — {1}",
 "#### Lists · {0} — {1}"
+],
+[
+"**Sous pression** : progresse {0} · résiste {1} · élimine {2}",
+"**Under pressure**: progresses {0} · keeps the ball {1} · beats players {2}"
+],
+[
+"**CPA** : centreur {0} · receveur aérien {1} · coup franc direct {2}",
+"**Set pieces**: crosser {0} · aerial target {1} · direct free kick {2}"
+],
+[
+"**Pivot aérien** : {0} · fiabilité {1}",
+"**Aerial target man**: {0} · reliability {1}"
+],
+[
+"**Gros matchs** : {0} contre le top du championnat ({1} pts)",
+"**Big games**: {0} against the league's top sides ({1} pts)"
 ]
 ],
 "r": [
