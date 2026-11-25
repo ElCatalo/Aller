@@ -378,8 +378,10 @@ def _i18n_installer() -> None:
     DeltaGenerator._i18n_pose = True
 
 
-ONGLETS = ["Scouting saison", "Monitoring", "Jeu sous pression", "Jeunes internationaux",
+ONGLETS = ["Scouting saison", "Tri & listes", "Monitoring", "Jeu sous pression", "Jeunes internationaux",
            "Sporting de Charleroi"]
+# Sous-onglets de « Tri & listes » (25/11/2026, nouveau systeme de shortlists par poste).
+TRI_ONGLETS = ["Trier", "Alertes", "Listes"]
 
 
 def _i18n_basculer() -> None:
@@ -503,6 +505,10 @@ hr{border-color:var(--trait);margin:1.3rem 0;}
 .rcsc-meta b{color:var(--encre);}
 .rcsc-vide{font-family:var(--mono);color:var(--trait-fort);font-size:1.1rem;text-align:center;padding:.5rem 0 .7rem;line-height:1.3;}
 .rcsc-vide span{font-size:.66rem;letter-spacing:.06em;color:var(--encre-3);}
+/* tri & listes : nom du joueur cliquable (bouton tertiaire) en titre de la fiche resume */
+[class*="st-key-tri_nom_"] button{padding:0;min-height:0;justify-content:flex-start;}
+[class*="st-key-tri_nom_"] button p{font-size:1.7rem;font-weight:800;letter-spacing:-.01em;line-height:1.15;text-align:left;}
+[class*="st-key-tri_nom_"] button:hover p{text-decoration:underline;}
 /* ecran de connexion : respiration verticale */
 .rcsc-accueil{padding-top:4.5rem;}
 </style>"""
@@ -1057,9 +1063,20 @@ MON = params_monitoring()
 # ----------------------------------------------------------------- onglets
 # Onglets a execution paresseuse : seul l'onglet ouvert calcule sa page, et la
 # barre laterale s'adapte (periode et minutes sur la periode en Monitoring).
-onglet_saison, onglet_mon, onglet_pression, onglet_jeunes, onglet_rcsc = st.tabs(
+onglet_saison, onglet_tri, onglet_mon, onglet_pression, onglet_jeunes, onglet_rcsc = st.tabs(
     ONGLETS, key="onglet", on_change="rerun")
-MONITORING = bool(onglet_mon.open)
+# Onglet « Tri & listes » (25/11/2026) : trois sous-onglets, paresseux eux aussi.
+# Trier et Listes lisent les filtres du scouting de saison ; Alertes ceux du
+# Monitoring (periode, minutes sur la periode) : elle passe donc pour le
+# Monitoring dans toute la barre laterale (MONITORING vrai), mais s'affiche ici.
+VUE_TRI = bool(onglet_tri.open)
+TRI_VUE = None
+if VUE_TRI:
+    with onglet_tri:
+        sous_trier, sous_alerte, sous_listes = st.tabs(TRI_ONGLETS, key="tri_onglet", on_change="rerun")
+    TRI_VUE = "alerte" if sous_alerte.open else "listes" if sous_listes.open else "trier"
+ALERTE = TRI_VUE == "alerte"
+MONITORING = bool(onglet_mon.open) or ALERTE
 # Onglet « Jeu sous pression » : classements des metriques de l'etude de pression.
 # Comme l'onglet maison, il a ses propres filtres et n'utilise pas le classement.
 VUE_PRESSION = bool(onglet_pression.open)
@@ -1334,7 +1351,9 @@ _libelles_profils = {f"{r.num} · {r.nom}": r.profil_id for r in _profils_poste.
 # calcules sur une saison complete).
 profil_id, seuil_correspondance, tri_profil, saison = None, 50, COURT, []
 _choix_profil = "Tous les profils"
-if MONITORING:
+if ALERTE:
+    tri_monitoring = "Score"
+elif MONITORING:
     tri_monitoring = st.sidebar.radio(
         "Classer par", ["Score", "Performance"], horizontal=True,
         help="**Score** : performance sur la période + niveau du club + âge (formule du score de "
@@ -1513,6 +1532,18 @@ def con_listes():
     # rien casser sur les bases deja remplies (syntaxe commune DuckDB/Postgres).
     for _col, _type in (("note", "VARCHAR"), ("priorite", "VARCHAR")):
         c.execute(f"ALTER TABLE listes ADD COLUMN IF NOT EXISTS {_col} {_type}")
+    # Nouveau systeme « Tri & listes » (25/11/2026) : tables a part, les
+    # shortlists ci-dessus ne changent pas. Memes definitions que importer_screening.py.
+    c.execute("""CREATE TABLE IF NOT EXISTS tri_listes (
+        archetype VARCHAR, playerId BIGINT, categorie VARCHAR, nom VARCHAR, club VARCHAR,
+        source VARCHAR, note VARCHAR, ajoute_le TIMESTAMP, modifie_le TIMESTAMP, modifie_par VARCHAR)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS tri_historique (
+        archetype VARCHAR, playerId BIGINT, nom VARCHAR, de VARCHAR, vers VARCHAR,
+        quand TIMESTAMP, par VARCHAR)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS tri_screening (
+        cle VARCHAR, nom_excel VARCHAR, archetype VARCHAR, couleur VARCHAR, tm_id BIGINT,
+        origine VARCHAR, commentaire VARCHAR, statut VARCHAR, decision VARCHAR, playerId BIGINT,
+        candidats VARCHAR, categorie_importee VARCHAR, maj_le TIMESTAMP)""")
     return c
 
 
@@ -1692,7 +1723,12 @@ masquer_exclus = st.sidebar.checkbox("Masquer les joueurs exclus", value=True)
 
 st.sidebar.markdown("**Profil**")
 age_max = st.sidebar.slider("Âge maximum", 16, 40, 40)
-if MONITORING:
+if ALERTE:
+    # Alertes : seuil d'entree 400 min au poste sur la periode (toutes positions du poste additionnees).
+    minutes_min = st.sidebar.slider(
+        "Minutes minimum sur la période", 400, 1200, 400, step=30,
+        help="Un joueur entre dans les alertes dès que ses minutes à ce poste sur la période atteignent ce seuil.")
+elif MONITORING:
     # Seuil d'entree du monitoring : 30 min au poste sur la periode (cf.
     # Charleroi_MultiPoste_MonitoringV10.MINUTES_MIN).
     _min_mon = int(MON["minutes_min"]) if MON is not None else 30
@@ -1920,26 +1956,28 @@ if not MONITORING and not VUE_RCSC and not VUE_PRESSION and not VUE_JEUNES:
     if tri_pivot:
         _ordre = f"pivot_score DESC NULLS LAST, {SC} DESC"
 
-    page = page_courante(f"{' AND '.join(where)}|{params}")
+    # Tri & listes : memes filtres, mais pas le classement de 500 lignes.
+    if not VUE_TRI:
+        page = page_courante(f"{' AND '.join(where)}|{params}")
 
-    # Les statistiques portent sur TOUS les joueurs filtres, pas sur la page affichee.
-    stats = requete(f"""SELECT count(*) AS n, median({SC}) AS med, max({SC}) AS max_,
-                               median(age_years) AS age_med
-                        FROM v_joueurs WHERE {' AND '.join(where)}""", tuple(params)).iloc[0]
-    total = int(stats["n"])
-    n_pages = max(1, -(-total // PAR_PAGE))   # division entière arrondie au-dessus
-    page = min(page, n_pages - 1)
-    st.session_state["page"] = page
+        # Les statistiques portent sur TOUS les joueurs filtres, pas sur la page affichee.
+        stats = requete(f"""SELECT count(*) AS n, median({SC}) AS med, max({SC}) AS max_,
+                                   median(age_years) AS age_med
+                            FROM v_joueurs WHERE {' AND '.join(where)}""", tuple(params)).iloc[0]
+        total = int(stats["n"])
+        n_pages = max(1, -(-total // PAR_PAGE))   # division entière arrondie au-dessus
+        page = min(page, n_pages - 1)
+        st.session_state["page"] = page
 
-    # Le classement lit EXACTEMENT les memes colonnes que la fiche : c'est de
-    # cette requete que sort la ligne passee a carte_joueur quand on clique un
-    # joueur. Elle dupliquait la liste a la main, et chaque colonne ajoutee a
-    # CHAMPS (buts, passes decisives, score hors age...) manquait donc dans la
-    # fiche ouverte depuis le classement -- le chemin le plus frequent.
-    res = requete(f"""
-        SELECT {CHAMPS}{_extra_select}
-        FROM v_joueurs WHERE {' AND '.join(where)}
-        ORDER BY {_ordre} LIMIT {PAR_PAGE} OFFSET {page * PAR_PAGE}""", tuple(_extra_params + params))
+        # Le classement lit EXACTEMENT les memes colonnes que la fiche : c'est de
+        # cette requete que sort la ligne passee a carte_joueur quand on clique un
+        # joueur. Elle dupliquait la liste a la main, et chaque colonne ajoutee a
+        # CHAMPS (buts, passes decisives, score hors age...) manquait donc dans la
+        # fiche ouverte depuis le classement -- le chemin le plus frequent.
+        res = requete(f"""
+            SELECT {CHAMPS}{_extra_select}
+            FROM v_joueurs WHERE {' AND '.join(where)}
+            ORDER BY {_ordre} LIMIT {PAR_PAGE} OFFSET {page * PAR_PAGE}""", tuple(_extra_params + params))
 
 # ----------------------------------------------------------------- fiche joueur
 n_ = lambda v, f="{:.1f}", d="—": (f.format(v) if pd.notna(v) else d)
@@ -3998,12 +4036,644 @@ def vue_monitoring() -> None:
     carte_monitoring(res_m.iloc[lignes[0] if lignes else 0])
 
 
+# ============================================================================
+# TRI & LISTES PAR POSTE (25/11/2026) -- nouveau systeme de shortlists
+# ============================================================================
+# Pour chaque poste, 5 listes ; un joueur est dans au plus UNE liste d'un poste
+# (table tri_listes de la base des listes, a cote des shortlists actuelles, qui
+# ne changent pas). Trois sous-onglets :
+#   Trier   : les joueurs du classement de saison (filtres de la barre laterale)
+#             qui ne sont encore dans aucune liste, un par un : fiche resume
+#             tenant sur un ecran + 5 boutons ; le joueur classe disparait.
+#   Alertes : meme principe, joueurs ayant atteint 400 minutes (reglable) a ce
+#             poste sur la periode du monitoring (30 derniers jours par defaut).
+#   Listes  : les 5 listes du poste, deplacements, notes, fiche complete, et
+#             les noms du fichier de screening a trancher.
+# Le fichier Excel de screening alimente les listes par importer_screening.py
+# (chaque nuit par maj_auto.py) : ligne sans couleur -> Suivi, verte -> Suivi
+# tres interessant. Un clic sur le nom de la fiche resume ouvre la fiche complete.
+TRI_CATEGORIES = {   # code en base -> (nom de la liste, pictogramme, libelle court du bouton)
+    "tres_interessant": ("Suivi très intéressant", "⭐", "Très intéressant"),
+    "suivi": ("Suivi", "👁️", "Suivi"),
+    "trop_cher": ("Probablement trop cher", "💰", "Trop cher"),
+    "pas_assez_fort": ("Probablement pas assez fort", "📉", "Pas assez fort"),
+    "neutre": ("Neutre", "⚪", "Neutre"),
+}
+TRI_A_TRIER = "__a_trier"          # cible « remettre a trier » d'un deplacement
+# Fin de saison, pour garder la saison la plus recente d'un joueur :
+# « 26/27 » -> 2027, « 2026 » -> 2026.
+FIN_SAISON_SQL = ("(CASE WHEN saison LIKE '%/%' THEN 2000 + TRY_CAST(split_part(saison, '/', 2) AS INT) "
+                  "ELSE TRY_CAST(saison AS INT) END)")
+_TRI_COLS = ["archetype", "playerId", "categorie", "nom", "club", "source", "note",
+             "ajoute_le", "modifie_le", "modifie_par"]
+
+
+# ------------------------------------------------------------ base des listes
+def tri_places(arch: str | None = None) -> pd.DataFrame:
+    """Joueurs classes (tous postes, ou un poste)."""
+    lignes = sql_listes(f"SELECT {', '.join(_TRI_COLS)} FROM tri_listes"
+                        + (" WHERE archetype=?" if arch else ""), [arch] if arch else [])
+    return pd.DataFrame(lignes, columns=_TRI_COLS)
+
+
+def tri_ids_classes(arch: str, tous_postes: bool) -> list[int]:
+    """Joueurs a ne plus proposer au tri : classes a ce poste, ou a n'importe quel poste."""
+    sql = "SELECT DISTINCT playerId FROM tri_listes" + ("" if tous_postes else " WHERE archetype=?")
+    return [int(r[0]) for r in sql_listes(sql, [] if tous_postes else [arch])]
+
+
+def tri_classer(arch: str, player_id, categorie: str | None, nom=None, club=None,
+                memoriser: bool = True) -> None:
+    """Range un joueur dans une liste du poste (categorie None : le remet a trier).
+
+    Une seule ligne par (poste, joueur) : le classer ailleurs le deplace. Chaque
+    mouvement est journalise (tri_historique) ; le dernier peut etre annule.
+    """
+    pid = int(player_id)
+    avant = sql_listes("SELECT categorie, nom, club, source, note, ajoute_le FROM tri_listes "
+                       "WHERE archetype=? AND playerId=?", [arch, pid])
+    cat0, nom0, club0, src0, note0, ajoute0 = avant[0] if avant else (None,) * 6
+    nom, club = _txt(nom) if nom is not None else nom0, _txt(club) if club is not None else club0
+    par = st.session_state.get("connecte", "?")
+    if memoriser:
+        st.session_state["_tri_annuler"] = dict(arch=arch, pid=pid, nom=nom, apres=categorie, avant=cat0,
+                                                nom0=nom0, club0=club0, source0=src0, note0=note0,
+                                                ajoute0=ajoute0)
+    sql_listes("DELETE FROM tri_listes WHERE archetype=? AND playerId=?", [arch, pid])
+    if categorie:
+        # source 'app' : un joueur deplace a la main n'est plus jamais touche par le fichier Excel.
+        sql_listes("INSERT INTO tri_listes (archetype, playerId, categorie, nom, club, source, note, ajoute_le, "
+                   "modifie_le, modifie_par) VALUES (?,?,?,?,?,'app',?,COALESCE(CAST(? AS TIMESTAMP), now()),"
+                   "now(),?)", [arch, pid, categorie, nom, club, note0, ajoute0, par])
+    sql_listes("INSERT INTO tri_historique (archetype, playerId, nom, de, vers, quand, par) "
+               "VALUES (?,?,?,?,?,now(),?)", [arch, pid, nom, cat0, categorie, par])
+
+
+def tri_annuler() -> str | None:
+    """Annule le dernier classement fait depuis Trier ou Alertes. Renvoie le nom du joueur."""
+    a = st.session_state.pop("_tri_annuler", None)
+    if not a:
+        return None
+    par = st.session_state.get("connecte", "?")
+    sql_listes("DELETE FROM tri_listes WHERE archetype=? AND playerId=?", [a["arch"], a["pid"]])
+    if a["avant"]:
+        sql_listes("INSERT INTO tri_listes (archetype, playerId, categorie, nom, club, source, note, ajoute_le, "
+                   "modifie_le, modifie_par) VALUES (?,?,?,?,?,?,?,COALESCE(CAST(? AS TIMESTAMP), now()),"
+                   "now(),?)", [a["arch"], a["pid"], a["avant"], a["nom0"], a["club0"], a["source0"],
+                                a["note0"], a["ajoute0"], par])
+    sql_listes("INSERT INTO tri_historique (archetype, playerId, nom, de, vers, quand, par) "
+               "VALUES (?,?,?,?,?,now(),?)", [a["arch"], a["pid"], a["nom"], a["apres"], a["avant"],
+                                              f"{par} (annulation)"])
+    return a["nom"]
+
+
+def tri_noter(arch: str, player_id, note: str) -> None:
+    sql_listes("UPDATE tri_listes SET note=?, modifie_le=now(), modifie_par=? WHERE archetype=? AND playerId=?",
+               [note.strip() or None, st.session_state.get("connecte", "?"), arch, int(player_id)])
+
+
+_SCR_COLS = ["cle", "nom_excel", "archetype", "couleur", "tm_id", "origine", "commentaire", "statut",
+             "decision", "playerId", "candidats", "maj_le"]
+
+
+def tri_screening() -> pd.DataFrame:
+    """Etat de la liaison du fichier de screening (importer_screening.py)."""
+    return pd.DataFrame(sql_listes(f"SELECT {', '.join(_SCR_COLS)} FROM tri_screening"), columns=_SCR_COLS)
+
+
+def tri_trancher(r, player_id: int | None) -> None:
+    """Decision d'Alex sur un nom du fichier : le bon joueur Impect, ou aucun.
+    Gardee en base (decision 'manuel') : le reimport ne la recalcule jamais."""
+    par = st.session_state.get("connecte", "?")
+    if player_id:
+        cat = "tres_interessant" if r.couleur == "vert" else "suivi"
+        sql_listes("UPDATE tri_screening SET statut='lie', decision='manuel', playerId=?, categorie_importee=?, "
+                   "maj_le=now() WHERE cle=?", [int(player_id), cat, r.cle])
+        if not sql_listes("SELECT 1 FROM tri_listes WHERE archetype=? AND playerId=?",
+                          [r.archetype, int(player_id)]):
+            sql_listes("INSERT INTO tri_listes (archetype, playerId, categorie, nom, club, source, note, ajoute_le, "
+                       "modifie_le, modifie_par) VALUES (?,?,?,?,NULL,'excel',?,now(),now(),?)",
+                       [r.archetype, int(player_id), cat, r.nom_excel, _txt(r.commentaire), par])
+            sql_listes("INSERT INTO tri_historique (archetype, playerId, nom, de, vers, quand, par) "
+                       "VALUES (?,?,?,NULL,?,now(),?)", [r.archetype, int(player_id), r.nom_excel, cat, par])
+    else:
+        sql_listes("UPDATE tri_screening SET statut='ignore', decision='manuel', playerId=NULL, maj_le=now() "
+                   "WHERE cle=?", [r.cle])
+
+
+# ------------------------------------------------------------ files d'attente
+def tri_file_saison(exclus: list[int], ordre: str, limite: int, decalage: int) -> tuple[int, pd.DataFrame]:
+    """Joueurs a trier : le classement de saison avec les filtres de la barre
+    laterale, sans les joueurs deja classes, UNE ligne par joueur (sa saison la
+    plus recente parmi les lignes filtrees, puis la plus jouee)."""
+    filtre, pa = " AND ".join(where), list(_extra_params) + list(params)
+    if exclus:
+        filtre += f" AND playerId NOT IN ({','.join('?' * len(exclus))})"
+        pa += exclus
+    base = f"""SELECT {CHAMPS}{_extra_select} FROM v_joueurs WHERE {filtre}
+        QUALIFY row_number() OVER (PARTITION BY playerId ORDER BY {FIN_SAISON_SQL} DESC, minutes_jouees DESC) = 1"""
+    n = int(requete(f"SELECT count(*) AS n FROM ({base}) t", tuple(pa)).iloc[0]["n"])
+    res = requete(f"SELECT * FROM ({base}) t ORDER BY {ordre}, score DESC NULLS LAST, playerId "
+                  f"LIMIT {int(limite)} OFFSET {int(decalage)}", tuple(pa))
+    return n, res
+
+
+def tri_file_alerte(exclus: list[int], ordre: str, limite: int, decalage: int) -> tuple[int, pd.DataFrame]:
+    """Joueurs a trier ayant joue au moins minutes_min a ce poste sur la periode.
+
+    Le seuil porte sur le TOTAL du poste (ailier gauche + ailier droit...), pas
+    sur chaque position : la ligne de filtre « minutes >= ? » du monitoring
+    (where[2]) est donc neutralisee, et la somme testee apres. seuil_le = date
+    du match ou le cumul de la periode a franchi le seuil.
+    """
+    debut, fin = bornes_periode()
+    pa = list(params)
+    pa[2] = 0
+    filtre = " AND ".join(where)
+    if exclus:
+        filtre += f" AND playerId NOT IN ({','.join('?' * len(exclus))})"
+        pa += exclus
+    sql = f"""WITH s AS (
+            SELECT playerId, min(date) FILTER (WHERE cumul >= ?) AS seuil_le,
+                   count(DISTINCT matchId) AS matchs_poste
+            FROM (SELECT playerId, matchId, date,
+                         sum(minutes) OVER (PARTITION BY playerId ORDER BY date, matchId
+                                            ROWS UNBOUNDED PRECEDING) AS cumul
+                  FROM mon.mon_match WHERE archetype = ? AND date >= ? AND date <= ?) c
+            GROUP BY playerId),
+        m0 AS (SELECT {MON_CHAMPS}, sum(m.minutes) OVER (PARTITION BY m.playerId) AS minutes_poste,
+                      row_number() OVER (PARTITION BY m.playerId ORDER BY m.minutes DESC) AS _rn
+               FROM (SELECT * FROM mon.mon_joueur WHERE {filtre}) m {MON_JOINTURE})
+        SELECT m0.*, s.seuil_le, s.matchs_poste FROM m0 LEFT JOIN s USING (playerId)
+        WHERE _rn = 1 AND minutes_poste >= ?"""
+    pa = [minutes_min, archetype, debut, fin] + pa + [minutes_min]
+    n = int(requete(f"SELECT count(*) AS n FROM ({sql}) t", tuple(pa)).iloc[0]["n"])
+    res = requete(f"SELECT * FROM ({sql}) t ORDER BY {ordre}, score DESC NULLS LAST, playerId "
+                  f"LIMIT {int(limite)} OFFSET {int(decalage)}", tuple(pa))
+    return n, res
+
+
+def ligne_alerte(player_id: int):
+    """Ligne du monitoring d'un joueur sur la periode (fiche complete ouverte depuis les Alertes)."""
+    if MON is None:
+        return None
+    r = requete(f"""SELECT {MON_CHAMPS} FROM mon.mon_joueur m {MON_JOINTURE}
+        WHERE m.playerId=? AND m.archetype=? AND m.periode_jours=? ORDER BY m.minutes DESC LIMIT 1""",
+                (player_id, archetype, periode))
+    return None if r.empty else r.iloc[0]
+
+
+def tri_enrichir(player_ids: tuple, arch: str) -> pd.DataFrame:
+    """Valeurs actuelles des joueurs d'une liste : leur ligne a ce poste (la plus
+    recente, puis la plus jouee), a defaut leur ligne la plus recente ailleurs."""
+    if not player_ids:
+        return pd.DataFrame()
+    return requete(f"""SELECT {CHAMPS} FROM v_joueurs WHERE playerId IN ({','.join('?' * len(player_ids))})
+        QUALIFY row_number() OVER (PARTITION BY playerId ORDER BY (archetype = ?) DESC,
+                                   {FIN_SAISON_SQL} DESC, minutes_jouees DESC) = 1""",
+                   tuple(int(p) for p in player_ids) + (arch,))
+
+
+# ------------------------------------------------------------ fiche resume
+def _couleur_percentile(p) -> str:
+    """Rouge (0) -> ambre (50) -> vert (100)."""
+    if p is None or pd.isna(p):
+        return "#BBBBBB"
+    p = max(0.0, min(100.0, float(p))) / 100
+    a, b, c = (192, 57, 43), (226, 163, 54), (30, 132, 73)
+    x, y, k = (a, b, p / 0.5) if p < 0.5 else (b, c, (p - 0.5) / 0.5)
+    return "#%02X%02X%02X" % tuple(round(x[i] + (y[i] - x[i]) * k) for i in range(3))
+
+
+def _graphe_piliers_compact(cle: tuple, arch: str) -> go.Figure | None:
+    piliers = requete("""SELECT pilier, percentile, poids FROM fait_pilier
+        WHERE playerId=? AND squadId=? AND iterationId=? AND position=? AND archetype=?
+        ORDER BY poids DESC""", cle)
+    if piliers.empty:
+        return None
+    noms = noms_piliers(piliers["pilier"], arch)
+    fig = go.Figure(go.Bar(
+        x=piliers["percentile"], y=noms, orientation="h",
+        marker_color=[_couleur_percentile(v) for v in piliers["percentile"]],
+        text=[n_(v, "{:.0f}") for v in piliers["percentile"]], textposition="outside", cliponaxis=False,
+        customdata=piliers["poids"] * 100,
+        hovertemplate="%{y} : percentile %{x:.0f} · poids %{customdata:.0f} %<extra></extra>"))
+    fig.add_vline(x=50, line_dash="dot", line_color="#999")
+    fig.update_layout(height=max(230, 27 * len(piliers) + 50), margin=dict(l=0, r=26, t=28, b=0),
+                      xaxis=dict(range=[0, 108], showgrid=False, title=None, tickvals=[0, 25, 50, 75, 100]),
+                      yaxis=dict(autorange="reversed", title=None), showlegend=False,
+                      title=dict(text="Piliers · percentile du poste", font=dict(size=13)))
+    return fig
+
+
+def _profils_top(cle: tuple) -> str:
+    """Les deux profils RCSC les plus proches, avec leur correspondance (0-100)."""
+    try:
+        p = requete("""SELECT d.nom, p.correspondance AS c FROM fait_profil p JOIN dim_profil d USING (profil_id)
+            WHERE p.playerId=? AND p.squadId=? AND p.iterationId=? AND p.position=? AND p.archetype=?
+              AND p.correspondance IS NOT NULL
+            ORDER BY p.correspondance DESC LIMIT 2""", cle)
+    except duckdb.Error:
+        return ""
+    return " · ".join(f"{tr(r.nom)} ({r.c:.0f})" for r in p.itertuples())
+
+
+def _ligne_transferroom(player_id) -> str | None:
+    fiche = transferroom("fiche")
+    if fiche is None:
+        return None
+    t = fiche[fiche["playerId"] == int(player_id)]
+    if t.empty:
+        return None
+    t = t.iloc[0]
+    morceaux = [f"valeur estimée {_eur(t.get('xTV'))}"]
+    if pd.notna(t.get("EstimatedSalary_max")):
+        morceaux.append(f"salaire estimé jusqu'à {_eur(t.get('EstimatedSalary_max'))} par an")
+    return "**TransferRoom** : " + " · ".join(morceaux)
+
+
+def _forme_recente(player_id: int, arch: str) -> str | None:
+    """Forme sur la periode par defaut du monitoring (30 jours), si le joueur y est."""
+    if MON is None:
+        return None
+    p = int(MON["periode_defaut"])
+    r = requete("""SELECT score, minutes, n_matchs FROM mon.mon_joueur
+        WHERE playerId=? AND archetype=? AND periode_jours=? ORDER BY minutes DESC LIMIT 1""",
+                (int(player_id), arch, p))
+    if r.empty:
+        return None
+    r = r.iloc[0]
+    return (f"**Forme sur {p} jours** : score {n_(r.score)} en {int(r.n_matchs)} match"
+            f"{'s' if r.n_matchs > 1 else ''} ({int(r.minutes)} min)")
+
+
+def _ligne_periode(m) -> str:
+    seuil = pd.to_datetime(m.get("seuil_le"), errors="coerce")
+    return (f"**{periode} derniers jours** : {int(m.minutes_poste)} min à ce poste en "
+            f"{int(m.matchs_poste) if pd.notna(m.matchs_poste) else int(m.matchs)} matchs · "
+            f"score période **{n_(m.score)}** (performance {n_(m.performance)})"
+            + (f" · seuil de {minutes_min} min franchi le {seuil:%d/%m}" if pd.notna(seuil) else ""))
+
+
+def _tri_ouvrir(j) -> None:
+    """Fiche complete : meme lien ?fiche= que partout ; le bouton retour ramene au tri."""
+    ouvrir_fiche(j.playerId, j.squadId, j.iterationId, j.position, j.archetype_courant)
+
+
+def fiche_resume(j, ctx: str, m=None) -> None:
+    """Fiche resume d'un joueur, tenant sur un ecran : identite, score, chiffres
+    cles, profils, piliers. Un clic sur le nom ouvre la fiche complete.
+    m : ligne de la periode du monitoring (Alertes)."""
+    arch = j.archetype_courant
+    cle = (int(j.playerId), int(j.squadId), int(j.iterationId), j.position, arch)
+    with st.container(border=True):
+        t1, t2, t3 = st.columns([3.2, 1, 1])
+        with t1:
+            if st.button(str(j.nom), type="tertiary", key=f"tri_nom_{ctx}_{cle[0]}",
+                         help="Ouvrir la fiche complète"):
+                _tri_ouvrir(j)
+            lieu = f"{j.club} · {j.competition}"
+            if pd.notna(j.pays):
+                lieu += f" ({j.pays}" + (f", D{int(j.niveau)})" if pd.notna(j.niveau) else ")")
+            st.caption(f"{lieu} · {j.saison} · {j.poste} · archétype {arch}")
+        if m is not None:
+            t2.metric("Score période", n_(m.score), f"{int(m.minutes_poste)} min", delta_color="off",
+                      help="Performance sur la période + niveau du club + âge : même échelle que le Score "
+                           "de saison.")
+            t3.metric(f"{COURT} saison", n_(j.score),
+                      f"P{j.percentile:.0f} du poste" if pd.notna(j.percentile) else None, delta_color="off",
+                      help=LECTURES[lecture]["aide"])
+        else:
+            t2.metric(COURT, n_(j.score), f"rang {int(j.rang_mondial)}" if pd.notna(j.rang_mondial) else None,
+                      delta_color="off", help=LECTURES[lecture]["aide"])
+            t3.metric("Percentile", n_(j.percentile, "{:.0f}"), "du poste", delta_color="off",
+                      help="Percentile du joueur à ce poste, toutes ligues.")
+        g, d = st.columns([1.25, 1], gap="medium")
+        with g:
+            _fin = pd.to_datetime(j.get("contrat_fin"), errors="coerce")
+            l1 = [("Qualité actuelle", n_(j.qualite), None), ("Performance", n_(j.performance), None),
+                  ("Âge", n_(j.age), None), ("Minutes", n_(j.minutes, "{:.0f}"), f"{n_(j.matchs, '{:.0f}')} matchs")]
+            l2 = [("Fin de contrat", f"{_fin:%m/%Y}" if pd.notna(_fin) else "—", None),
+                  ("Pied", j.pied_fort or "—", None), ("Taille", n_(j.taille_cm, "{:.0f} cm"), None)]
+            if "buts" in j.index and arch in ("NINE", "WG", "TEN") and pd.notna(j.buts):
+                l2.append(("Buts · passes déc.", f"{int(j.buts)} · {int(j.passes_d) if pd.notna(j.passes_d) else 0}",
+                           None))
+            else:
+                l2.append(("Progression", n_(j.progression, "{:+.1f}"), None))
+            for ligne in (l1, l2):
+                for col, (lab, val, dl) in zip(st.columns(4), ligne):
+                    col.metric(lab, val, dl, delta_color="off")
+            if prof := _profils_top(cle):
+                st.markdown(f"**Profils RCSC** : {prof}")
+            st.markdown(f"**Point fort** : {nom_pilier(str(j.pilier_fort), arch)} · "
+                        f"**Point faible** : {nom_pilier(str(j.pilier_faible), arch)}")
+            if t_ := _ligne_transferroom(j.playerId):
+                st.markdown(t_)
+            if m is not None:
+                st.markdown(_ligne_periode(m))
+            elif f_ := _forme_recente(cle[0], arch):
+                st.markdown(f_)
+        with d:
+            if (fig := _graphe_piliers_compact(cle, arch)) is not None:
+                st.plotly_chart(fig, width="stretch", key=f"tri_fig_{ctx}_{cle}",
+                                config={"displayModeBar": False})
+
+
+def _carte_minimale(m) -> None:
+    """Alerte sans fiche de saison a ce poste : en-tete et periode seulement."""
+    with st.container(border=True):
+        st.markdown(f"### {m.nom}")
+        lieu = f"{m.club} · {m.competition}"
+        if pd.notna(m.pays):
+            lieu += f" ({m.pays}" + (f", D{int(m.niveau)})" if pd.notna(m.niveau) else ")")
+        st.caption(f"{lieu} · {m.saison} · {m.poste} · âge {n_(m.age)}")
+        st.markdown(_ligne_periode(m))
+        st.info("Pas encore de fiche de saison à ce poste : il faut 400 minutes sur une saison à une même "
+                "position pour être évalué par le scoring de saison.")
+
+
+def _boutons_tri(j, ctx: str, fiche: bool = True) -> None:
+    """Les 5 listes, puis Passer, Annuler et Fiche complete."""
+    cols = st.columns([1.25, 0.9, 1, 1.15, 0.85, 0.85, 0.9, 1])
+    for col, (code, (nom, picto, court)) in zip(cols, TRI_CATEGORIES.items()):
+        if col.button(f"{picto} {tr(court)}", key=f"tri_btn_{ctx}_{code}_{int(j.playerId)}", width="stretch",
+                      type="primary" if code == "tres_interessant" else "secondary",
+                      help=f"Envoyer dans « {tr(nom)} »"):
+            tri_classer(archetype, j.playerId, code, j.nom, j.club)
+            st.session_state["_message_listes"] = f"{j.nom} → {tr(nom)}"
+            st.rerun()
+    if cols[5].button("⏭ Passer", key=f"tri_passer_{ctx}", width="stretch",
+                      help="Le laisser à trier et voir le joueur suivant"):
+        st.session_state[f"tri_saut_{ctx}"] = st.session_state.get(f"tri_saut_{ctx}", 0) + 1
+        st.rerun()
+    a = st.session_state.get("_tri_annuler")
+    if cols[6].button("↩ Annuler", key=f"tri_annuler_{ctx}", width="stretch", disabled=not a,
+                      help=f"Annuler le dernier classement : {a['nom']}" if a else "Rien à annuler"):
+        st.session_state["_message_listes"] = f"Classement annulé : {tri_annuler()}"
+        st.rerun()
+    if fiche and cols[7].button("📄 Fiche", key=f"tri_fiche_{ctx}", width="stretch",
+                                help="Ouvrir la fiche complète"):
+        _tri_ouvrir(j)
+
+
+def _decalage(ctx: str, signature: str) -> int:
+    """Joueurs passes : remis a zero des qu'un filtre, le poste ou le tri change."""
+    if st.session_state.get(f"tri_sig_{ctx}") != signature:
+        st.session_state[f"tri_sig_{ctx}"] = signature
+        st.session_state[f"tri_saut_{ctx}"] = 0
+    return st.session_state.get(f"tri_saut_{ctx}", 0)
+
+
+def _file_suite(res: pd.DataFrame, ctx: str, saut: int, col_score: str = "score") -> None:
+    suivants = res.iloc[1:]
+    if suivants.empty and not saut:
+        return
+    c1, c2 = st.columns([5, 1], vertical_alignment="center")
+    if not suivants.empty:
+        c1.caption("Ensuite : " + " · ".join(f"{r.nom} ({n_(getattr(r, col_score))})"
+                                             for r in suivants.itertuples()))
+    if saut:
+        c1.caption(f"{saut} joueur passé" if saut == 1 else f"{saut} joueurs passés")
+        if c2.button("↺ Revoir les passés", key=f"tri_reprendre_{ctx}", width="stretch"):
+            st.session_state[f"tri_saut_{ctx}"] = 0
+            st.rerun()
+
+
+def _options_tri_saison() -> dict:
+    o = {lecture: "score DESC NULLS LAST"}
+    if SC != "qualite_actuelle":
+        o["Qualité actuelle (niveau JPL)"] = "qualite DESC NULLS LAST"
+    o.update({"Performance": "performance DESC NULLS LAST", "Progression": "progression DESC NULLS LAST",
+              "Minutes jouées": "minutes DESC NULLS LAST", "Âge (plus jeune d'abord)": "age ASC NULLS LAST"})
+    if contrat_dispo():
+        o["Fin de contrat (la plus proche d'abord)"] = "contrat_fin ASC NULLS LAST"
+    if profil_id:
+        o["Correspondance au profil"] = "corr_profil DESC NULLS LAST"
+    return o
+
+
+OPTIONS_TRI_ALERTE = {
+    "Score sur la période": "score DESC NULLS LAST",
+    "Seuil franchi le plus récemment": "seuil_le DESC NULLS LAST",
+    "Performance sur la période": "performance DESC NULLS LAST",
+    "Minutes sur la période": "minutes_poste DESC",
+    "Score de saison": "score_saison DESC NULLS LAST",
+    "Âge (plus jeune d'abord)": "age ASC NULLS LAST",
+}
+
+
+def _barre_tri(ctx: str, options: dict) -> tuple[str, bool]:
+    c1, c2 = st.columns([1.3, 1], vertical_alignment="center")
+    choix = c1.selectbox("Classer par", list(options), key=f"tri_ordre_{ctx}",
+                         format_func=lambda o: f"Classer par : {tr(o)}", label_visibility="collapsed")
+    tous = c2.toggle("Masquer aussi les joueurs classés à un autre poste", value=True, key=f"tri_tous_{ctx}",
+                     help="Activé : un joueur déjà rangé dans une liste d'un autre poste n'est plus proposé. "
+                          "Désactivé : seuls les joueurs classés à ce poste-ci sont retirés.")
+    return options[choix], tous
+
+
+# ------------------------------------------------------------ les trois vues
+def vue_trier() -> None:
+    st.markdown(f"#### Trier · {archetype} — {ARCHETYPES[archetype]}")
+    ordre, tous = _barre_tri("trier", _options_tri_saison())
+    exclus = tri_ids_classes(archetype, tous)
+    saut = _decalage("trier", f"{archetype}|{where}|{params}|{ordre}|{tous}|{cle_donnees()}")
+    n, res = tri_file_saison(exclus, ordre, 6, saut)
+    if res.empty and saut:
+        st.session_state["tri_saut_trier"] = 0
+        st.rerun()
+    st.caption(f"**{n}** joueur{'s' if n > 1 else ''} à trier avec les filtres de la barre latérale · "
+               f"{len(tri_ids_classes(archetype, False))} déjà classé(s) à ce poste. "
+               "Un clic sur le nom ouvre la fiche complète.")
+    if res.empty:
+        st.success("Plus aucun joueur à trier avec ces filtres.")
+        return
+    j = res.iloc[0]
+    fiche_resume(j, "trier")
+    _boutons_tri(j, "trier")
+    _file_suite(res, "trier", saut)
+
+
+def vue_alerte() -> None:
+    if MON is None:
+        st.warning("Base du monitoring absente : relance `python impect-scouting/db_build.py`, "
+                   "puis `publier.py` pour la mettre en ligne.")
+        return
+    debut, fin = bornes_periode()
+    st.markdown(f"#### Alertes · {archetype} — {ARCHETYPES[archetype]}")
+    ordre, tous = _barre_tri("alerte", OPTIONS_TRI_ALERTE)
+    exclus = tri_ids_classes(archetype, tous)
+    saut = _decalage("alerte", f"{archetype}|{where}|{params}|{ordre}|{tous}|{cle_donnees()}")
+    n, res = tri_file_alerte(exclus, ordre, 6, saut)
+    if res.empty and saut:
+        st.session_state["tri_saut_alerte"] = 0
+        st.rerun()
+    st.caption(f"**{n}** joueur{'s' if n > 1 else ''} pas encore classé{'s' if n > 1 else ''} avec au moins "
+               f"**{minutes_min} min** à ce poste entre le {debut:%d/%m/%Y} et le {fin:%d/%m/%Y} (période et seuil "
+               "dans la barre latérale). Un clic sur le nom ouvre la fiche complète.")
+    if res.empty:
+        st.success("Aucune alerte : aucun joueur non classé n'atteint le seuil sur la période.")
+        return
+    m = res.iloc[0]
+    f = pd.DataFrame()
+    if pd.notna(m.fiche_iterationId):
+        f = requete(f"""SELECT {CHAMPS} FROM v_joueurs
+            WHERE playerId=? AND squadId=? AND iterationId=? AND position=? AND archetype=?""",
+                    (int(m.playerId), int(m.fiche_squadId), int(m.fiche_iterationId),
+                     m.fiche_position, m.fiche_archetype))
+    if f.empty:
+        _carte_minimale(m)
+        _boutons_tri(m, "alerte", fiche=False)
+    else:
+        fiche_resume(f.iloc[0], "alerte", m=m)
+        _boutons_tri(f.iloc[0], "alerte")
+    _file_suite(res, "alerte", saut)
+
+
+def _bloc_screening() -> None:
+    """Fichier de screening : resume du dernier import et noms a trancher."""
+    try:
+        scr = tri_screening()
+    except Exception:          # noqa: BLE001 -- table absente d'une vieille base : pas de bloc
+        return
+    if scr.empty:
+        st.caption("Fichier de screening pas encore importé : `python impect-scouting/importer_screening.py`.")
+        return
+    a_trancher = scr[scr["statut"].isin(["conflit", "a_verifier"])].sort_values(["archetype", "nom_excel"])
+    nb = scr["statut"].value_counts()
+    maj = pd.to_datetime(scr["maj_le"]).max()
+    with st.expander(f"📋 Fichier de screening · {len(a_trancher)} nom{'s' if len(a_trancher) > 1 else ''} "
+                     "à trancher", expanded=False):
+        st.caption(f"Dernier import le {maj:%d/%m/%Y} à {maj:%H:%M} : {int(nb.get('lie', 0))} joueurs reliés à Impect, "
+                   f"{int(nb.get('introuvable', 0))} absents d'Impect (ignorés), {int(nb.get('ignore', 0))} "
+                   "écartés à la main. Sans couleur → Suivi, vert → Suivi très intéressant.")
+        if a_trancher.empty:
+            st.success("Aucun nom à trancher.")
+        for r in a_trancher.itertuples():
+            cands = json.loads(r.candidats or "[]")
+            lab = {int(c["playerId"]): (f"{c['nom']} · {c['club']} ({c['competition']}) · {c['saison']} · "
+                                        f"postes {c['archetypes']} · né le {c.get('naissance') or '?'}")
+                   for c in cands}
+            lab[0] = "Aucun : ce joueur n'est pas dans Impect"
+            pourquoi = ("plusieurs joueurs Impect portent ce nom" if r.statut == "conflit"
+                        else "nom proche, ou poste Impect différent du fichier")
+            lien = (f" · [Transfermarkt](https://www.transfermarkt.fr/joueur/profil/spieler/{int(r.tm_id)})"
+                    if pd.notna(r.tm_id) else "")
+            st.markdown(f"**{r.nom_excel}** · {r.archetype} · {tr('vert' if r.couleur == 'vert' else 'sans couleur')}"
+                        f" · {r.origine or ''}{lien} — {tr(pourquoi)}")
+            c1, c2 = st.columns([5, 1], vertical_alignment="bottom")
+            choix = c1.radio(f"Joueur Impect pour {r.nom_excel}", list(lab), index=None,
+                             format_func=lambda k, lab=lab: tr(lab[k]), key=f"trancher_{r.cle}",
+                             label_visibility="collapsed")
+            if c2.button("Valider", key=f"trancher_ok_{r.cle}", disabled=choix is None, width="stretch"):
+                tri_trancher(r, choix or None)
+                st.session_state["_message_listes"] = (f"{r.nom_excel} : relié et ajouté à la liste" if choix
+                                                       else f"{r.nom_excel} : écarté")
+                st.rerun()
+
+
+def vue_listes() -> None:
+    arch = archetype
+    st.markdown(f"#### Listes · {arch} — {ARCHETYPES[arch]}")
+    _bloc_screening()
+    places = tri_places(arch).rename(columns={"nom": "nom_liste", "club": "club_liste"})
+    vivant = tri_enrichir(tuple(places["playerId"].tolist()), arch)
+    st.caption(f"**{len(places)}** joueur{'s' if len(places) > 1 else ''} classé{'s' if len(places) > 1 else ''} à "
+               "ce poste. Les listes ne suivent pas les filtres de la barre latérale ; les valeurs sont celles "
+               "du dernier build (saison la plus récente du joueur à ce poste).")
+    version = st.session_state.setdefault("_tri_version", 0)
+    onglets = st.tabs([f"{p} {tr(nom)} ({int((places['categorie'] == code).sum())})"
+                       for code, (nom, p, _) in TRI_CATEGORIES.items()])
+    for ong, (code, (nom_cat, picto, _)) in zip(onglets, TRI_CATEGORIES.items()):
+        with ong:
+            df = places[places["categorie"] == code]
+            if df.empty:
+                st.info("Liste vide : classe des joueurs depuis Trier ou Alertes.")
+                continue
+            if not vivant.empty:
+                df = df.merge(vivant, on="playerId", how="left")
+            for c_ in ("nom", "club", "archetype_courant", "squadId", "score"):
+                if c_ not in df:
+                    df[c_] = np.nan
+            df["nom"] = df["nom"].fillna(df["nom_liste"])
+            df["club"] = df["club"].fillna(df["club_liste"])
+            df["evalue"] = np.where(df["archetype_courant"].isna(), tr("absent du build"),
+                                    np.where(df["archetype_courant"] == arch, "",
+                                             tr("évalué en") + " " + df["archetype_courant"].fillna("").astype(str)))
+            df["origine"] = df["source"].map({"excel": "Screening", "app": tr("Plateforme")}).fillna("")
+            df["classe_le"] = pd.to_datetime(df["modifie_le"], errors="coerce")
+            df["note"] = df["note"].fillna("")
+            df = df.sort_values("score", ascending=False, na_position="last").reset_index(drop=True)
+            colonnes = [c_ for c_ in ["nom", "age", "club", "competition", "pays", "niveau", "saison", "score",
+                                      "profil_principal", ("score_v8" if SC == "qualite_actuelle" else "qualite"),
+                                      "contrat_fin", "minutes", "pied_fort", "performance", "progression",
+                                      "gros_matchs", "rang_mondial", "evalue", "note", "origine", "classe_le"]
+                        if c_ in df]
+            ev = st.dataframe(
+                df, hide_index=True, width="stretch", height=min(560, 38 + 35 * len(df)),
+                key=f"tri_liste_{arch}_{code}_{version}", on_select="rerun", selection_mode="multi-row",
+                column_order=colonnes,
+                column_config={
+                    "score": st.column_config.ProgressColumn(lecture, min_value=0, max_value=120, format="%.1f",
+                                                             help=LECTURES[lecture]["aide"]),
+                    "qualite": st.column_config.NumberColumn("Qualité", format="%.1f"),
+                    "score_v8": st.column_config.NumberColumn("Score", format="%.1f"),
+                    "contrat_fin": st.column_config.DateColumn("Fin contrat", format="MM/YYYY"),
+                    "profil_principal": st.column_config.TextColumn("Profil RCSC"),
+                    "gros_matchs": st.column_config.NumberColumn("Gros matchs"),
+                    "progression": st.column_config.NumberColumn("Progression", format="%+.1f"),
+                    "rang_mondial": st.column_config.NumberColumn("Rang", format="%d"),
+                    "evalue": st.column_config.TextColumn(
+                        "Poste évalué", help="Vide : évalué à ce poste. Sinon, le poste où Impect l'évalue "
+                                             "(ses chiffres affichés sont ceux de ce poste)."),
+                    "note": st.column_config.TextColumn("Note"),
+                    "origine": st.column_config.TextColumn(
+                        "Origine", help="Screening : venu du fichier Excel. Plateforme : classé dans l'app."),
+                    "classe_le": st.column_config.DatetimeColumn("Classé le", format="DD/MM/YYYY"),
+                })
+            sel = ev.selection["rows"] if ev and "rows" in ev.selection else []
+            ids_sel = [int(df.iloc[i]["playerId"]) for i in sel]
+            a1, a2, a3, a4 = st.columns([2, 1.1, 1.1, 1.3], vertical_alignment="bottom")
+            cibles = [c_ for c_ in TRI_CATEGORIES if c_ != code] + [TRI_A_TRIER]
+            dest = a1.selectbox(
+                "Déplacer la sélection vers", cibles, key=f"tri_dest_{arch}_{code}",
+                format_func=lambda c_: (tr("↩ Remettre à trier") if c_ == TRI_A_TRIER
+                                        else f"{TRI_CATEGORIES[c_][1]} {tr(TRI_CATEGORIES[c_][0])}"))
+            if a2.button(f"Déplacer ({len(ids_sel)})", key=f"tri_dep_{arch}_{code}", disabled=not ids_sel,
+                         width="stretch", help="Coche une ou plusieurs lignes du tableau."):
+                for pid in ids_sel:
+                    tri_classer(arch, pid, None if dest == TRI_A_TRIER else dest, memoriser=False)
+                st.session_state["_tri_version"] = version + 1
+                st.session_state["_message_listes"] = (
+                    f"{len(ids_sel)} joueur{'s' if len(ids_sel) > 1 else ''} → "
+                    + tr("à trier" if dest == TRI_A_TRIER else TRI_CATEGORIES[dest][0]))
+                st.rerun()
+            if a3.button("📄 Ouvrir la fiche", key=f"tri_ouv_{arch}_{code}", width="stretch",
+                         disabled=len(sel) != 1 or pd.isna(df.iloc[sel[0]]["squadId"]) if sel else True):
+                _tri_ouvrir(df.iloc[sel[0]])
+            a4.download_button("Exporter la liste (Excel)", en_excel(df[colonnes], nom_cat[:31]),
+                               f"liste_{arch}_{code}.xlsx", key=f"tri_xls_{arch}_{code}", width="stretch")
+            if len(sel) == 1:
+                r = df.iloc[sel[0]]
+                n1, n2 = st.columns([5, 1], vertical_alignment="bottom")
+                note = n1.text_input(f"Note sur {r['nom']}", value=r["note"],
+                                     key=f"tri_note_{arch}_{int(r['playerId'])}")
+                if n2.button("Enregistrer", key=f"tri_note_ok_{arch}_{code}", width="stretch"):
+                    tri_noter(arch, r["playerId"], note)
+                    st.session_state["_tri_version"] = version + 1
+                    st.session_state["_message_listes"] = f"Note enregistrée : {r['nom']}"
+                    st.rerun()
+            else:
+                st.caption("Coche des lignes pour les déplacer ; une seule ligne pour ouvrir sa fiche ou la noter.")
+
+
 club_param = st.query_params.get("club")
 fiche_param = st.query_params.get("fiche")
 
 # Chaque vue s'affiche dans l'onglet ouvert. Une fiche ou un effectif ouvert
 # depuis le Monitoring y reste : le bouton retour ramene au classement.
-with (onglet_mon if MONITORING else
+with ({"trier": sous_trier, "alerte": sous_alerte, "listes": sous_listes}[TRI_VUE] if VUE_TRI else
+      onglet_mon if MONITORING else
       onglet_rcsc if VUE_RCSC else
       onglet_pression if VUE_PRESSION else onglet_saison):
     # Rappel visible sur chaque vue : un Score lu avec des poids modifies ne doit
@@ -4025,11 +4695,15 @@ with (onglet_mon if MONITORING else
         ligne = (requete(f"""SELECT {CHAMPS} FROM v_joueurs
             WHERE playerId=? AND squadId=? AND iterationId=? AND position=? AND archetype=?""", cle_fiche)
                  if cle_fiche else pd.DataFrame())
-        if st.button("← Retour à l'effectif" if club_param else "← Retour à la recherche"):
+        if st.button("← Retour à l'effectif" if club_param else
+                     "← Retour au tri" if VUE_TRI else "← Retour à la recherche"):
             del st.query_params["fiche"]
             st.rerun()
         if ligne.empty:
             st.error("Fiche introuvable : le lien vient peut-être d'avant une mise à jour des données.")
+        elif ALERTE and (m_alerte := ligne_alerte(int(ligne.iloc[0].playerId))) is not None:
+            # Ouverte depuis les Alertes : fiche de saison + matchs de la periode (comme le Monitoring).
+            carte_monitoring(m_alerte)
         else:
             carte_joueur(ligne.iloc[0])
 
@@ -4071,6 +4745,10 @@ with (onglet_mon if MONITORING else
         st.divider()
         sel = ev.selection["rows"] if ev and "rows" in ev.selection else []
         carte_joueur(effectif.iloc[sel[0] if sel else 0])
+
+    elif VUE_TRI:
+        # Nouveau systeme de shortlists par poste (25/11/2026)
+        {"trier": vue_trier, "alerte": vue_alerte, "listes": vue_listes}[TRI_VUE]()
 
     elif MONITORING:
         vue_monitoring()

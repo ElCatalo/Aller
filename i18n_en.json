@@ -761,7 +761,72 @@
 "Part des penaltys cadrés, arrêtés compris.": "Share of penalties on target, saved ones included.",
 "Placement : ce que vaut la frappe une fois tirée moins l'xG d'un penalty (0,78). Hors cadre = −0,78.": "Placement: what the strike is worth once taken minus a penalty's xG (0.78). Off target = −0.78.",
 "Penaltys marqués / tirés, toute la carrière disponible.": "Penalties scored / taken, whole available career.",
-"Buts − xG hors penalty (par 90 min)": "Non-penalty goals − xG (per 90 min)"
+"Buts − xG hors penalty (par 90 min)": "Non-penalty goals − xG (per 90 min)",
+"Tri & listes": "Sorting & lists",
+"Trier": "Sort",
+"Alertes": "Alerts",
+"Listes": "Lists",
+"← Retour au tri": "← Back to sorting",
+"Un joueur entre dans les alertes dès que ses minutes à ce poste sur la période atteignent ce seuil.": "A player enters the alerts as soon as his minutes at this position over the period reach this threshold.",
+"Suivi très intéressant": "Very interesting – follow",
+"Suivi": "Follow",
+"Probablement trop cher": "Probably too expensive",
+"Probablement pas assez fort": "Probably not good enough",
+"Neutre": "Neutral",
+"Très intéressant": "Very interesting",
+"Trop cher": "Too expensive",
+"Pas assez fort": "Not good enough",
+"⏭ Passer": "⏭ Skip",
+"Le laisser à trier et voir le joueur suivant": "Leave him to sort and see the next player",
+"↩ Annuler": "↩ Undo",
+"Rien à annuler": "Nothing to undo",
+"📄 Fiche": "📄 Profile",
+"Ouvrir la fiche complète": "Open the full profile",
+"↺ Revoir les passés": "↺ Review skipped players",
+"Minutes jouées": "Minutes played",
+"Âge (plus jeune d'abord)": "Age (youngest first)",
+"Fin de contrat (la plus proche d'abord)": "Contract end (soonest first)",
+"Correspondance au profil": "Profile match",
+"Score sur la période": "Score over the period",
+"Seuil franchi le plus récemment": "Threshold crossed most recently",
+"Performance sur la période": "Performance over the period",
+"Minutes sur la période": "Minutes over the period",
+"Score de saison": "Season score",
+"Performance": "Performance",
+"Masquer aussi les joueurs classés à un autre poste": "Also hide players classified at another position",
+"Activé : un joueur déjà rangé dans une liste d'un autre poste n'est plus proposé. Désactivé : seuls les joueurs classés à ce poste-ci sont retirés.": "On: a player already placed in a list for another position is no longer shown. Off: only players classified at this position are removed.",
+"Plus aucun joueur à trier avec ces filtres.": "No players left to sort with these filters.",
+"Aucune alerte : aucun joueur non classé n'atteint le seuil sur la période.": "No alerts: no unclassified player reaches the threshold over the period.",
+"Performance sur la période + niveau du club + âge : même échelle que le Score de saison.": "Performance over the period + club level + age: same scale as the season Score.",
+"du poste": "at position",
+"Percentile du joueur à ce poste, toutes ligues.": "Player percentile at this position, all leagues.",
+"Buts · passes déc.": "Goals · assists",
+"Piliers · percentile du poste": "Pillars · position percentile",
+"Pas encore de fiche de saison à ce poste : il faut 400 minutes sur une saison à une même position pour être évalué par le scoring de saison.": "No season profile at this position yet: 400 minutes in one season at the same position are needed to be rated by the season scoring.",
+"Fichier de screening pas encore importé : `python impect-scouting/importer_screening.py`.": "Screening file not imported yet: `python impect-scouting/importer_screening.py`.",
+"Aucun nom à trancher.": "No names to settle.",
+"Aucun : ce joueur n'est pas dans Impect": "None: this player is not in Impect",
+"plusieurs joueurs Impect portent ce nom": "several Impect players share this name",
+"nom proche, ou poste Impect différent du fichier": "similar name, or Impect position different from the file",
+"vert": "green",
+"sans couleur": "no colour",
+"Valider": "Confirm",
+"Liste vide : classe des joueurs depuis Trier ou Alertes.": "Empty list: classify players from Sort or Alerts.",
+"Poste évalué": "Position rated",
+"Vide : évalué à ce poste. Sinon, le poste où Impect l'évalue (ses chiffres affichés sont ceux de ce poste).": "Empty: rated at this position. Otherwise, the position where Impect rates him (the figures shown are those of that position).",
+"Note": "Note",
+"Origine": "Source",
+"Screening : venu du fichier Excel. Plateforme : classé dans l'app.": "Screening: came from the Excel file. Platform: classified in the app.",
+"Classé le": "Classified on",
+"absent du build": "not in build",
+"évalué en": "rated as",
+"Plateforme": "Platform",
+"Déplacer la sélection vers": "Move selection to",
+"↩ Remettre à trier": "↩ Back to sorting",
+"à trier": "to sort",
+"Coche une ou plusieurs lignes du tableau.": "Tick one or more rows in the table.",
+"📄 Ouvrir la fiche": "📄 Open profile",
+"Coche des lignes pour les déplacer ; une seule ligne pour ouvrir sa fiche ou la noter.": "Tick rows to move them; a single row to open its profile or add a note."
 },
 "f": [
 [
@@ -1319,6 +1384,154 @@
 [
 "Données TransferRoom (valeurs et salaires = estimations TransferRoom) · collecte du {0}",
 "TransferRoom data (values and salaries = TransferRoom estimates) · collected on {0}"
+],
+[
+"Trier · {0} — {1}",
+"Sort · {0} — {1}"
+],
+[
+"Alertes · {0} — {1}",
+"Alerts · {0} — {1}"
+],
+[
+"Listes · {0} — {1}",
+"Lists · {0} — {1}"
+],
+[
+"Classer par : {0}",
+"Sort by: {0}"
+],
+[
+"Envoyer dans « {0} »",
+"Send to “{0}”"
+],
+[
+"Annuler le dernier classement : {0}",
+"Undo the last classification: {0}"
+],
+[
+"Classement annulé : {0}",
+"Classification undone: {0}"
+],
+[
+"Ensuite : {0}",
+"Next: {0}"
+],
+[
+"{0} joueur passé",
+"{0} player skipped"
+],
+[
+"{0} joueurs passés",
+"{0} players skipped"
+],
+[
+"**{0}** joueur{1} à trier avec les filtres de la barre latérale · {2} déjà classé(s) à ce poste. Un clic sur le nom ouvre la fiche complète.",
+"**{0}** player{1} to sort with the sidebar filters · {2} already classified at this position. Click the name to open the full profile."
+],
+[
+"**{0}** joueur{1} pas encore classé{2} avec au moins **{3} min** à ce poste entre le {4} et le {5} (période et seuil dans la barre latérale). Un clic sur le nom ouvre la fiche complète.",
+"**{0}** player{1} not yet classified with at least **{3} min** at this position between {4} and {5} (period and threshold in the sidebar). Click the name to open the full profile."
+],
+[
+"{0} · {1} · {2} · âge {3}",
+"{0} · {1} · {2} · age {3}"
+],
+[
+"{0} saison",
+"Season {0}"
+],
+[
+"P{0} du poste",
+"P{0} at position"
+],
+[
+"rang {0}",
+"rank {0}"
+],
+[
+"**Profils RCSC** : {0}",
+"**RCSC profiles**: {0}"
+],
+[
+"**Point fort** : {0} · **Point faible** : {1}",
+"**Strength**: {0} · **Weakness**: {1}"
+],
+[
+"**TransferRoom** : valeur estimée {0} · salaire estimé jusqu'à {1} par an",
+"**TransferRoom**: estimated value {0} · estimated salary up to {1} per year"
+],
+[
+"**TransferRoom** : valeur estimée {0}",
+"**TransferRoom**: estimated value {0}"
+],
+[
+"**Forme sur {0} jours** : score {1} en {2} match{3} ({4} min)",
+"**Form over {0} days**: score {1} in {2} game{3} ({4} min)"
+],
+[
+"**{0} derniers jours** : {1} min à ce poste en {2} matchs · score période **{3}** (performance {4}) · seuil de {5} min franchi le {6}",
+"**Last {0} days**: {1} min at this position in {2} games · period score **{3}** (performance {4}) · {5}-min threshold crossed on {6}"
+],
+[
+"**{0} derniers jours** : {1} min à ce poste en {2} matchs · score période **{3}** (performance {4})",
+"**Last {0} days**: {1} min at this position in {2} games · period score **{3}** (performance {4})"
+],
+[
+"📋 Fichier de screening · {0} nom{1} à trancher",
+"📋 Screening file · {0} name{1} to settle"
+],
+[
+"Dernier import le {0} à {1} : {2} joueurs reliés à Impect, {3} absents d'Impect (ignorés), {4} écartés à la main. Sans couleur → Suivi, vert → Suivi très intéressant.",
+"Last import on {0} at {1}: {2} players linked to Impect, {3} not in Impect (ignored), {4} discarded by hand. No colour → Follow, green → Very interesting – follow."
+],
+[
+"{0} · {1} ({2}) · {3} · postes {4} · né le {5}",
+"{0} · {1} ({2}) · {3} · positions {4} · born {5}"
+],
+[
+"Joueur Impect pour {0}",
+"Impect player for {0}"
+],
+[
+"{0} : relié et ajouté à la liste",
+"{0}: linked and added to the list"
+],
+[
+"{0} : écarté",
+"{0}: discarded"
+],
+[
+"**{0}** joueur{1} classé{2} à ce poste. Les listes ne suivent pas les filtres de la barre latérale ; les valeurs sont celles du dernier build (saison la plus récente du joueur à ce poste).",
+"**{0}** player{1} classified at this position. Lists do not follow the sidebar filters; values are those of the latest build (the player's most recent season at this position)."
+],
+[
+"Déplacer ({0})",
+"Move ({0})"
+],
+[
+"{0} joueur{1} → {2}",
+"{0} player{1} → {2}"
+],
+[
+"Note sur {0}",
+"Note on {0}"
+],
+[
+"Note enregistrée : {0}",
+"Note saved: {0}"
+],
+[
+"#### Trier · {0} — {1}",
+"#### Sort · {0} — {1}"
+],
+[
+"#### Alertes · {0} — {1}",
+"#### Alerts · {0} — {1}"
+],
+[
+"#### Listes · {0} — {1}",
+"#### Lists · {0} — {1}"
 ]
 ],
 "r": [
