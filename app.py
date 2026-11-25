@@ -4419,6 +4419,28 @@ def _tri_ouvrir(j) -> None:
     ouvrir_fiche(j.playerId, j.squadId, j.iterationId, j.position, j.archetype_courant)
 
 
+def _bouton_copier(texte: str) -> None:
+    """Petit bouton 📋 qui copie `texte` dans le presse-papiers (iframe de composant :
+    st.button ne peut pas ecrire dans le presse-papiers du navigateur). API Clipboard,
+    repli execCommand('copy') si le navigateur la refuse dans l'iframe."""
+    import html as _html
+    import streamlit.components.v1 as components
+    t = json.dumps(texte)
+    aide = _html.escape(tr("Copier le nom"), quote=True)
+    components.html(f"""
+<button id="b" title="{aide}" style="border:1px solid #d0d0d0;background:#fff;border-radius:6px;
+ cursor:pointer;font-size:15px;line-height:1;padding:5px 7px;margin:0;">📋</button>
+<script>
+const b = document.getElementById('b'), t = {t};
+function ok() {{ b.textContent = '✓'; setTimeout(() => b.textContent = '📋', 1200); }}
+function repli() {{
+  const z = document.createElement('textarea'); z.value = t; document.body.appendChild(z);
+  z.select(); try {{ document.execCommand('copy'); ok(); }} catch (e) {{}} z.remove();
+}}
+b.onclick = () => (navigator.clipboard ? navigator.clipboard.writeText(t).then(ok, repli) : repli());
+</script>""", height=36, width=40)
+
+
 def _pc(v) -> str:
     """Percentile ou score 0-100 colore : vert >= 70, rouge <= 30, « – » si absent."""
     if v is None or pd.isna(v):
@@ -4503,9 +4525,12 @@ def fiche_resume(j, ctx: str, m=None) -> None:
     with st.container(border=True, key=f"tri_carte_{ctx}_{cle[0]}"):
         t1, t2, t3, t4 = st.columns([2.7, 1, 1, 1])
         with t1:
-            if st.button(str(j.nom), type="tertiary", key=f"tri_nom_{ctx}_{cle[0]}",
-                         help="Ouvrir la fiche complète"):
-                _tri_ouvrir(j)
+            # 25/11/2026 (Alex) : bouton 📋 colle au nom pour copier « Prenom Nom » d'un clic.
+            with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+                if st.button(str(j.nom), type="tertiary", key=f"tri_nom_{ctx}_{cle[0]}",
+                             help="Ouvrir la fiche complète"):
+                    _tri_ouvrir(j)
+                _bouton_copier(str(j.nom))
             lieu = f"{j.club} · {j.competition}"
             if pd.notna(j.pays):
                 lieu += f" ({j.pays}" + (f", D{int(j.niveau)})" if pd.notna(j.niveau) else ")")
