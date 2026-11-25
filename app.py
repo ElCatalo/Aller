@@ -4933,8 +4933,8 @@ def vue_listes() -> None:
             for c_ in feux_cols:
                 df[c_] = df[c_].map(FEUX).astype(object).where(df[c_].map(FEUX).notna(), None)
             df.insert(0, "choisir", False)
-            colonnes = [c_ for c_ in ["choisir", "nom", *feux_cols, "feux_total", "age", "club", "competition",
-                                      "saison",
+            # Σ feux retire de l'affichage (Alex, 25/11) : il reste dans le filtre et l'export.
+            colonnes = [c_ for c_ in ["choisir", "nom", *feux_cols, "age", "club", "competition", "saison",
                                       "score", "profil_principal",
                                       ("score_v8" if SC == "qualite_actuelle" else "qualite"),
                                       "contrat_fin", "minutes", "pied_fort", "performance", "progression",
@@ -4951,6 +4951,11 @@ def vue_listes() -> None:
                     **{f"feu_{c_}": st.column_config.SelectboxColumn(ent, options=list(FEUX.values()),
                                                                      width="small", help=aide)
                        for c_, (ent, aide) in TRI_FEUX.items()},
+                    # Largeurs reduites (px) pour voir minutes et pied fort sans defiler.
+                    "nom": st.column_config.TextColumn("Nom", width=150),
+                    "age": st.column_config.NumberColumn("Âge", width=50),
+                    "club": st.column_config.TextColumn("Club", width=105),
+                    "competition": st.column_config.TextColumn("Compétition", width=105),
                     "feux_total": st.column_config.NumberColumn(
                         "Σ feux", format="%d", width="small",
                         help="Total des 3 feux : 🔴 = 0, 🟠 = 1, 🟢 = 2 (6 = trois verts). Vide : aucun feu posé. "
@@ -5003,7 +5008,8 @@ def vue_listes() -> None:
                          disabled=len(sel) != 1 or pd.isna(df.iloc[sel[0]]["squadId"]) if sel else True):
                 _tri_ouvrir(df.iloc[sel[0]])
             a4.download_button("Exporter la liste (Excel)",
-                               en_excel(ev[[c_ for c_ in colonnes if c_ != "choisir"]], nom_cat[:31]),
+                               en_excel(ev[[c_ for c_ in colonnes if c_ != "choisir"] + ["feux_total"]],
+                                        nom_cat[:31]),
                                f"liste_{arch}_{code}.xlsx", key=f"tri_xls_{arch}_{code}", width="stretch")
             if len(sel) == 1:
                 r = df.iloc[sel[0]]
