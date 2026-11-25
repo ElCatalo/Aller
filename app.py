@@ -513,7 +513,15 @@ hr{border-color:var(--trait);margin:1.3rem 0;}
 [class*="st-key-tri_carte_"] [data-testid="stMetricValue"]{font-size:1.15rem;}
 [class*="st-key-tri_carte_"] [data-testid="stMetricLabel"] p{font-size:.74rem;}
 [class*="st-key-tri_carte_"] [data-testid="stMetricDelta"]{font-size:.72rem;}
-[class*="st-key-tri_carte_"] [data-testid="stMetric"]{padding:.15rem 0;}
+/* cases centrees et de meme hauteur, avec ou sans ligne sous le chiffre (retour d'Alex 25/11) */
+[class*="st-key-tri_carte_"] [data-testid="stMetric"]{padding:.3rem .2rem;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;text-align:center;min-height:4.9rem;}
+[class*="st-key-tri_carte_"] [data-testid="stMetric"] > div{width:100%;}
+[class*="st-key-tri_carte_"] [data-testid="stMetricLabel"]{justify-content:center;width:100%;}
+[class*="st-key-tri_carte_"] [data-testid="stMetricLabel"] > div{justify-content:center;}
+[class*="st-key-tri_carte_"] [data-testid="stMetricValue"]{justify-content:center;text-align:center;width:100%;}
+[class*="st-key-tri_carte_"] [data-testid="stMetricDelta"]{justify-content:center;margin:0 auto;}
+[class*="st-key-tri_carte_"] [class*="st-key-tri_tete_"] [data-testid="stMetric"]{min-height:6rem;}
 [class*="st-key-tri_carte_"] [class*="st-key-tri_tete_"] [data-testid="stMetricValue"]{font-size:1.55rem;}
 [class*="st-key-tri_infos_"] p{font-size:.88rem;margin-bottom:.1rem;line-height:1.35;}
 [class*="st-key-tri_infos_"] [data-testid="stVerticalBlock"]{gap:.1rem;}
@@ -4476,7 +4484,8 @@ def _heatmap_compacte(j, cle_widget: str) -> None:
         st.caption("Pas de carte des zones d'action pour cette saison.")
         return
     fig = graphe_heatmap(g)
-    fig.update_layout(height=210, margin=dict(l=0, r=0, t=26, b=0), annotations=[],
+    fig.layout.annotations = ()          # la legende « sens de l'attaque » est dans le titre
+    fig.update_layout(height=210, margin=dict(l=0, r=0, t=26, b=0),
                       title=dict(text="Zones d'action · saison  ⟶", font=dict(size=13)))
     st.plotly_chart(fig, width="stretch", key=f"tri_hm_{cle_widget}", config={"displayModeBar": False})
 
