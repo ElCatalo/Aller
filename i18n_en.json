@@ -839,7 +839,9 @@
 ":green[**⬆ meilleur**]": ":green[**⬆ better**]",
 ":orange[**⬇ moins bon**]": ":orange[**⬇ worse**]",
 "**= même niveau**": "**= same level**",
-"Copier le nom": "Copy the name"
+"Copier le nom": "Copy the name",
+"Alerte": "Alert",
+"❗ Alerte d'entrée : joueur pas encore trié qui a joué au moins 400 minutes à ce poste sur les 30 derniers jours (onglet Tri & listes → Alertes). Aucune autre alerte (progression…) n'est signalée ici.": "❗ Entry alert: player not yet sorted who has played at least 400 minutes in this position over the last 30 days (Sorting & lists tab → Alerts). No other alert (progression…) is flagged here."
 },
 "f": [
 [

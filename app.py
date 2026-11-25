@@ -4312,6 +4312,30 @@ def tri_file_alerte(exclus: list[int], ordre: str, limite: int, decalage: int) -
     return n, res
 
 
+# 25/11/2026 (Alex) : repere ❗ dans le classement « Scouting saison » pour les joueurs de
+# l'onglet Alertes. UNIQUEMENT l'alerte d'entree : franchir 400 minutes a ce poste sur la
+# periode par defaut du monitoring (30 jours), sans etre deja classe. Une autre alerte
+# (progression...) ajoutee plus tard aura son propre repere.
+MINUTES_ALERTE = 400
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _alerte_400_mon(arch: str, periode_j: int, seuil: int) -> frozenset:
+    r = requete("""SELECT playerId FROM mon.mon_joueur WHERE archetype=? AND periode_jours=?
+        GROUP BY playerId HAVING sum(minutes) >= ?""", (arch, periode_j, seuil))
+    return frozenset(int(x) for x in r["playerId"])
+
+
+def ids_alerte_400(arch: str) -> set:
+    """Joueurs de l'onglet Alertes a reglages par defaut (meme somme des positions du poste)."""
+    if MON is None:
+        return set()
+    ids = _alerte_400_mon(arch, int(MON["periode_defaut"]), MINUTES_ALERTE)
+    if not ids:
+        return set()
+    return set(ids) - set(tri_ids_classes(arch, st.session_state.get("tri_tous_alerte", True)))
+
+
 def ligne_alerte(player_id: int):
     """Ligne du monitoring d'un joueur sur la periode (fiche complete ouverte depuis les Alertes)."""
     if MON is None:
@@ -4982,6 +5006,11 @@ with ({"trier": sous_trier, "alerte": sous_alerte, "listes": sous_listes}[TRI_VU
         if minutes_min < MINUTES_FIABLES and _reduits.any():
             res["prudence"] = _reduits.map({True: "⚠", False: ""})
             _col_prudence = ["prudence"]
+        # ❗ Alerte 400 min (onglet Tri & listes -> Alertes) : seulement si un joueur de la page l'est.
+        _col_alerte = []
+        if (_al := res["playerId"].isin(ids_alerte_400(archetype))).any():
+            res["alerte_400"] = _al.map({True: "❗ 400 min", False: ""})
+            _col_alerte = ["alerte_400"]
         premier, dernier = page * PAR_PAGE + 1, page * PAR_PAGE + len(res)
         if profil_id:
             _tri = "correspondance au profil" if tri_profil == "Correspondance" else lecture.lower()
@@ -5010,7 +5039,7 @@ with ({"trier": sous_trier, "alerte": sous_alerte, "listes": sous_listes}[TRI_VU
         event = st.dataframe(
             res, hide_index=True, width="stretch", height=430, key=f"tableau_{page}",
             on_select="rerun", selection_mode="single-row",
-            column_order=["nom", "age", "club", "competition", "pays", "niveau", "saison",
+            column_order=["nom"] + _col_alerte + ["age", "club", "competition", "pays", "niveau", "saison",
                           "score"] + _colonnes_pivot + (["role_milieu"] if archetype in ("SIX", "EIGHT") else [])
                          + _colonnes_profil + [("score_v8" if SC == "qualite_actuelle" else "qualite"),
                           "contrat_fin", "minutes"] + _col_prudence + _colonnes_cpa + ["pied_fort", "performance",
@@ -5044,6 +5073,11 @@ with ({"trier": sous_trier, "alerte": sous_alerte, "listes": sous_listes}[TRI_VU
                     "Fiabilité CPA", help="Fiabilité de chaque pilier CPA, mesurée séparément : bonne, moy. (moyenne) ou – (trop peu d'actions, score masqué). Récep. = offensif/défensif."),
                 "pivot_fiabilite_classe": st.column_config.TextColumn(
                     "Fiabilité pivot", help="Bonne, moyenne ou faible selon le nombre de ballons disputés."),
+                "alerte_400": st.column_config.TextColumn(
+                    "Alerte", width="small",
+                    help="❗ Alerte d'entrée : joueur pas encore trié qui a joué au moins 400 minutes à ce "
+                         "poste sur les 30 derniers jours (onglet Tri & listes → Alertes). Aucune autre "
+                         "alerte (progression…) n'est signalée ici."),
                 "prudence": st.column_config.TextColumn(
                     "⚠", width="small",
                     help=f"Moins de {MINUTES_FIABLES} minutes à ce poste : profil RCSC et jeu sous "
