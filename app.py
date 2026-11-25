@@ -4467,7 +4467,8 @@ b.onclick = () => (navigator.clipboard ? navigator.clipboard.writeText(t).then(o
 
 def _pc(v) -> str:
     """Percentile ou score 0-100 colore : vert >= 70, rouge <= 30, « – » si absent."""
-    if v is None or pd.isna(v):
+    # Les percentiles de pression valent -1 quand le joueur n'est pas dans l'etude (pas de donnee).
+    if v is None or pd.isna(v) or float(v) < 0:
         return "–"
     t = f"{float(v):.0f}"
     return f":green[**{t}**]" if v >= 70 else (f":red[**{t}**]" if v <= 30 else f"**{t}**")
@@ -4486,7 +4487,7 @@ def _lignes_compactes(j, cle: tuple) -> list[str]:
     x = x.iloc[0] if not x.empty else None
     lignes = []
     # Jeu sous pression (Etude_Pression_Passes) : percentiles du poste, une centaine de championnats.
-    if x is not None and arch != "GK" and any(pd.notna(x[c]) for c in
+    if x is not None and arch != "GK" and any(pd.notna(x[c]) and x[c] >= 0 for c in
                                               ("pct_part_prog_fp", "pct_reussite_fp_vs_attendu_100",
                                                "pct_bypassed_vs_attendu_p90")):
         lignes.append(f"**Sous pression** : progresse {_pc(x.pct_part_prog_fp)} · résiste "
