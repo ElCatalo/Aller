@@ -856,7 +856,8 @@
 "🔴 = 0, 🟠 = 1, 🟢 = 2 : somme des feux posés (6 = trois verts). Dès que le curseur est réglé, les joueurs sans aucun feu sont retirés.": "🔴 = 0, 🟠 = 1, 🟢 = 2: sum of the lights set (6 = three greens). As soon as the slider is moved, players without any light are removed.",
 "Σ feux": "Σ lights",
 "Total des 3 feux : 🔴 = 0, 🟠 = 1, 🟢 = 2 (6 = trois verts). Vide : aucun feu posé. Clique l'en-tête pour trier.": "Total of the 3 lights: 🔴 = 0, 🟠 = 1, 🟢 = 2 (6 = three greens). Empty: no light set. Click the header to sort.",
-"Aucun joueur de cette liste ne correspond aux filtres des feux.": "No player in this list matches the light filters."
+"Aucun joueur de cette liste ne correspond aux filtres des feux.": "No player in this list matches the light filters.",
+"À poser avant de le classer : ils le suivront dans sa liste.": "Set them before sorting him: they will follow him into his list."
 },
 "f": [
 [

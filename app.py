@@ -4204,20 +4204,27 @@ def _feu_change(pid: int, critere: str, cle_w: str) -> None:
     tri_feu_poser(pid, critere, st.session_state.get(cle_w))
 
 
-def bloc_feux(player_id, cle: str) -> None:
-    """Les 3 feux d'un joueur classe dans une liste de Tri & listes (rien sinon)."""
+def bloc_feux(player_id, cle: str, hors_liste: bool = False) -> None:
+    """Les 3 feux d'un joueur classe dans une liste de Tri & listes (rien sinon).
+
+    hors_liste (Trier, Alertes) : affiches meme pour un joueur pas encore classe ;
+    les feux poses le suivent ensuite dans la liste ou on l'envoie (cle = playerId).
+    """
     if pd.isna(player_id):
         return
     pid = int(player_id)
     places = sql_listes("SELECT archetype, categorie FROM tri_listes WHERE playerId=?", [pid])
-    if not places:
+    if not places and not hors_liste:
         return
     f = tri_feux([pid])
     actuel = f.iloc[0] if not f.empty else pd.Series(dtype=object)
     cols = st.columns([1.3, 1, 1, 1], vertical_alignment="bottom")
     cols[0].markdown("**🚦 Feux de la liste**")
-    cols[0].caption(" · ".join(f"{str(a).split(' ')[0]} : {TRI_CATEGORIES.get(c, (c, ''))[1]} "
-                               f"{tr(TRI_CATEGORIES.get(c, (c,))[0])}" for a, c in places))
+    if places:
+        cols[0].caption(" · ".join(f"{str(a).split(' ')[0]} : {TRI_CATEGORIES.get(c, (c, ''))[1]} "
+                                   f"{tr(TRI_CATEGORIES.get(c, (c,))[0])}" for a, c in places))
+    else:
+        cols[0].caption("À poser avant de le classer : ils le suivront dans sa liste.")
     for col, (crit, (entete, aide)) in zip(cols[1:], TRI_FEUX.items()):
         cle_w = f"feu_{crit}_{cle}"
         v = actuel.get(f"feu_{crit}")
@@ -4696,7 +4703,8 @@ def _carte_minimale(m) -> None:
 
 
 def _boutons_tri(j, ctx: str, fiche: bool = True) -> None:
-    """Les 5 listes, puis Passer, Annuler et Fiche complete."""
+    """Les feux, puis les 5 listes, Passer, Annuler et Fiche complete."""
+    bloc_feux(j.playerId, f"tri_{ctx}_{int(j.playerId)}", hors_liste=True)
     cols = st.columns([1.25, 0.9, 1, 1.15, 0.85, 0.85, 0.9, 1])
     for col, (code, (nom, picto, court)) in zip(cols, TRI_CATEGORIES.items()):
         if col.button(f"{picto} {tr(court)}", key=f"tri_btn_{ctx}_{code}_{int(j.playerId)}", width="stretch",
