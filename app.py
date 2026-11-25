@@ -1560,6 +1560,10 @@ def con_listes():
         cle VARCHAR, nom_excel VARCHAR, archetype VARCHAR, couleur VARCHAR, tm_id BIGINT,
         origine VARCHAR, commentaire VARCHAR, statut VARCHAR, decision VARCHAR, playerId BIGINT,
         candidats VARCHAR, categorie_importee VARCHAR, maj_le TIMESTAMP)""")
+    # Feux de decision des listes (25/11/2026) : un avis vert / orange / rouge par
+    # joueur et par critere (TRI_FEUX), partage entre tous les comptes.
+    c.execute("""CREATE TABLE IF NOT EXISTS tri_feux (
+        playerId BIGINT, critere VARCHAR, feu VARCHAR, modifie_le TIMESTAMP, modifie_par VARCHAR)""")
     return c
 
 
@@ -3605,6 +3609,7 @@ def carte_joueur(j, extra=None) -> None:
            if SANS_AGE and pd.notna(j.get("score_sans_age")) else ""))
 
     bloc_transferroom(j)
+    bloc_feux(j.playerId, f"fiche_{cle}")
 
     b1, b2, b3, b4 = st.columns([1, 1, 1, 2])
     if b1.button(f"Ajouter à « {shortlist} »", width="stretch", key=f"add_{cle}"):
@@ -3959,6 +3964,7 @@ def carte_monitoring(m) -> None:
         ajouter(shortlist, j); st.toast(f"{m.nom} ajouté à « {shortlist} »"); st.rerun()
     if b2.button("🚫 Exclure ce joueur", width="stretch", key=f"mon_exc_{m.playerId}"):
         ajouter("exclus", j); st.toast(f"{m.nom} exclu"); st.rerun()
+    bloc_feux(m.playerId, f"mon_{m.playerId}")
     section_monitoring(m, None)
     st.info("Pas encore de fiche de saison : il faut 400 minutes jouées à ce poste sur une saison "
             "pour être évalué par le scoring de saison.")
@@ -4146,6 +4152,78 @@ def tri_annuler() -> str | None:
 def tri_noter(arch: str, player_id, note: str) -> None:
     sql_listes("UPDATE tri_listes SET note=?, modifie_le=now(), modifie_par=? WHERE archetype=? AND playerId=?",
                [note.strip() or None, st.session_state.get("connecte", "?"), arch, int(player_id)])
+
+
+# ------------------------------------------------------------ feux de decision
+# 25/11/2026 (Alex) : trois feux vert / orange / rouge par joueur des listes,
+# modifiables dans l'onglet Listes et sur la fiche complete (scouting, recherche,
+# monitoring). Un avis par joueur, pas par poste : il le suit d'une liste a l'autre.
+TRI_FEUX = {   # code en base -> (en-tete de colonne, aide)
+    "faisabilite": ("Faisabilité", "Faisabilité du transfert : prix, contrat, concurrence, volonté du club "
+                                   "et du joueur."),
+    "profil_data": ("Profil data", "Pertinence du profil data : ses chiffres correspondent-ils à ce que l'on "
+                                   "cherche à ce poste ?"),
+    "step_jpl": ("Step JPL", "Le passage en Jupiler Pro League est-il logique pour lui maintenant : niveau du "
+                             "championnat d'où il vient et moment de sa carrière (step trop grand, adapté ou "
+                             "recul)."),
+}
+FEUX = {"vert": "🟢", "orange": "🟠", "rouge": "🔴"}
+FEU_DE_PICTO = {v: k for k, v in FEUX.items()}
+
+
+def tri_feux(player_ids) -> pd.DataFrame:
+    """Feux des joueurs : une ligne par joueur, une colonne feu_<critere> (code ou None)."""
+    cols = ["playerId"] + [f"feu_{c}" for c in TRI_FEUX]
+    ids = sorted({int(p) for p in player_ids if pd.notna(p)})
+    if not ids:
+        return pd.DataFrame(columns=cols)
+    lignes = sql_listes(f"SELECT playerId, critere, feu FROM tri_feux WHERE playerId IN "
+                        f"({','.join('?' * len(ids))})", ids)
+    d = pd.DataFrame(lignes, columns=["playerId", "critere", "feu"])
+    d = d[d["critere"].isin(list(TRI_FEUX))]
+    if d.empty:
+        return pd.DataFrame(columns=cols)
+    d = d.drop_duplicates(["playerId", "critere"], keep="last").pivot(index="playerId", columns="critere",
+                                                                       values="feu")
+    d = d.reindex(columns=list(TRI_FEUX)).add_prefix("feu_").reset_index()
+    d["playerId"] = d["playerId"].astype("int64")
+    return d[cols]
+
+
+def tri_feu_poser(player_id, critere: str, feu: str | None) -> None:
+    """Pose (ou retire, feu None) le feu d'un joueur pour un critere."""
+    pid = int(player_id)
+    sql_listes("DELETE FROM tri_feux WHERE playerId=? AND critere=?", [pid, critere])
+    if feu:
+        sql_listes("INSERT INTO tri_feux (playerId, critere, feu, modifie_le, modifie_par) "
+                   "VALUES (?,?,?,now(),?)", [pid, critere, feu, st.session_state.get("connecte", "?")])
+
+
+def _feu_change(pid: int, critere: str, cle_w: str) -> None:
+    tri_feu_poser(pid, critere, st.session_state.get(cle_w))
+
+
+def bloc_feux(player_id, cle: str) -> None:
+    """Les 3 feux d'un joueur classe dans une liste de Tri & listes (rien sinon)."""
+    if pd.isna(player_id):
+        return
+    pid = int(player_id)
+    places = sql_listes("SELECT archetype, categorie FROM tri_listes WHERE playerId=?", [pid])
+    if not places:
+        return
+    f = tri_feux([pid])
+    actuel = f.iloc[0] if not f.empty else pd.Series(dtype=object)
+    cols = st.columns([1.3, 1, 1, 1], vertical_alignment="bottom")
+    cols[0].markdown("**🚦 Feux de la liste**")
+    cols[0].caption(" · ".join(f"{str(a).split(' ')[0]} : {TRI_CATEGORIES.get(c, (c, ''))[1]} "
+                               f"{tr(TRI_CATEGORIES.get(c, (c,))[0])}" for a, c in places))
+    for col, (crit, (entete, aide)) in zip(cols[1:], TRI_FEUX.items()):
+        cle_w = f"feu_{crit}_{cle}"
+        v = actuel.get(f"feu_{crit}")
+        # La base fait foi : un feu pose ailleurs (Listes, autre compte) s'affiche ici.
+        st.session_state[cle_w] = v if isinstance(v, str) and v in FEUX else None
+        col.segmented_control(entete, list(FEUX), format_func=lambda k: FEUX[k], key=cle_w, help=aide,
+                              on_change=_feu_change, args=(pid, crit, cle_w))
 
 
 _SCR_COLS = ["cle", "nom_excel", "archetype", "couleur", "tm_id", "origine", "commentaire", "statut",
@@ -4828,18 +4906,33 @@ def vue_listes() -> None:
             df["classe_le"] = pd.to_datetime(df["modifie_le"], errors="coerce")
             df["note"] = df["note"].fillna("")
             df = df.sort_values("score", ascending=False, na_position="last").reset_index(drop=True)
-            colonnes = [c_ for c_ in ["nom", "age", "club", "competition", "pays", "niveau", "saison", "score",
-                                      "profil_principal", ("score_v8" if SC == "qualite_actuelle" else "qualite"),
+            # 25/11/2026 : 3 feux juste a droite du nom (modifiables ici), pays et niveau
+            # passes a droite, case « ✓ » pour choisir les lignes (le tableau est editable).
+            df = df.merge(tri_feux(df["playerId"]), on="playerId", how="left")
+            feux_cols = [f"feu_{c_}" for c_ in TRI_FEUX]
+            for c_ in feux_cols:
+                df[c_] = df[c_].map(FEUX).astype(object).where(df[c_].map(FEUX).notna(), None)
+            df.insert(0, "choisir", False)
+            colonnes = [c_ for c_ in ["choisir", "nom", *feux_cols, "age", "club", "competition", "saison",
+                                      "score", "profil_principal",
+                                      ("score_v8" if SC == "qualite_actuelle" else "qualite"),
                                       "contrat_fin", "minutes", "pied_fort", "performance", "progression",
-                                      "gros_matchs", "rang_mondial", "evalue", "note", "origine", "classe_le"]
+                                      "gros_matchs", "rang_mondial", "pays", "niveau", "evalue", "note", "origine",
+                                      "classe_le"]
                         if c_ in df]
-            ev = st.dataframe(
+            ev = st.data_editor(
                 df, hide_index=True, width="stretch", height=min(560, 38 + 35 * len(df)),
-                key=f"tri_liste_{arch}_{code}_{version}", on_select="rerun", selection_mode="multi-row",
-                column_order=colonnes,
+                key=f"tri_liste_{arch}_{code}_{version}", column_order=colonnes,
+                disabled=[c_ for c_ in df.columns if c_ not in ["choisir", *feux_cols]],
                 column_config={
-                    "score": st.column_config.ProgressColumn(lecture, min_value=0, max_value=120, format="%.1f",
-                                                             help=LECTURES[lecture]["aide"]),
+                    "choisir": st.column_config.CheckboxColumn(
+                        "✓", width="small", help="Cocher pour déplacer, ouvrir la fiche ou noter."),
+                    **{f"feu_{c_}": st.column_config.SelectboxColumn(ent, options=list(FEUX.values()),
+                                                                     width="small", help=aide)
+                       for c_, (ent, aide) in TRI_FEUX.items()},
+                    "score": st.column_config.ProgressColumn(COURT, min_value=0, max_value=120, format="%.1f",
+                                                             width="small",
+                                                             help=f"{tr(lecture)} — {tr(LECTURES[lecture]['aide'])}"),
                     "qualite": st.column_config.NumberColumn("Qualité", format="%.1f"),
                     "score_v8": st.column_config.NumberColumn("Score", format="%.1f"),
                     "contrat_fin": st.column_config.DateColumn("Fin contrat", format="MM/YYYY"),
@@ -4855,7 +4948,12 @@ def vue_listes() -> None:
                         "Origine", help="Screening : venu du fichier Excel. Plateforme : classé dans l'app."),
                     "classe_le": st.column_config.DatetimeColumn("Classé le", format="DD/MM/YYYY"),
                 })
-            sel = ev.selection["rows"] if ev and "rows" in ev.selection else []
+            # Feux changes dans le tableau : enregistres tout de suite, pour tous les comptes.
+            for c_ in TRI_FEUX:
+                k_ = f"feu_{c_}"
+                for i in np.flatnonzero((ev[k_].fillna("") != df[k_].fillna("")).to_numpy()):
+                    tri_feu_poser(df.iloc[i]["playerId"], c_, FEU_DE_PICTO.get(ev.iloc[i][k_]))
+            sel = [int(i) for i in np.flatnonzero(ev["choisir"].fillna(False).astype(bool).to_numpy())]
             ids_sel = [int(df.iloc[i]["playerId"]) for i in sel]
             a1, a2, a3, a4 = st.columns([2, 1.1, 1.1, 1.3], vertical_alignment="bottom")
             cibles = [c_ for c_ in TRI_CATEGORIES if c_ != code] + [TRI_A_TRIER]
@@ -4875,7 +4973,8 @@ def vue_listes() -> None:
             if a3.button("📄 Ouvrir la fiche", key=f"tri_ouv_{arch}_{code}", width="stretch",
                          disabled=len(sel) != 1 or pd.isna(df.iloc[sel[0]]["squadId"]) if sel else True):
                 _tri_ouvrir(df.iloc[sel[0]])
-            a4.download_button("Exporter la liste (Excel)", en_excel(df[colonnes], nom_cat[:31]),
+            a4.download_button("Exporter la liste (Excel)",
+                               en_excel(ev[[c_ for c_ in colonnes if c_ != "choisir"]], nom_cat[:31]),
                                f"liste_{arch}_{code}.xlsx", key=f"tri_xls_{arch}_{code}", width="stretch")
             if len(sel) == 1:
                 r = df.iloc[sel[0]]
@@ -4888,7 +4987,9 @@ def vue_listes() -> None:
                     st.session_state["_message_listes"] = f"Note enregistrée : {r['nom']}"
                     st.rerun()
             else:
-                st.caption("Coche des lignes pour les déplacer ; une seule ligne pour ouvrir sa fiche ou la noter.")
+                st.caption("Coche des lignes (✓) pour les déplacer ; une seule ligne pour ouvrir sa fiche ou la "
+                           "noter. Feux : clique une case 🟢🟠🔴 pour la remplir ; enregistré pour tous les comptes, "
+                           "modifiable aussi depuis la fiche complète du joueur.")
 
 
 club_param = st.query_params.get("club")

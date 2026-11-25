@@ -841,7 +841,16 @@
 "**= même niveau**": "**= same level**",
 "Copier le nom": "Copy the name",
 "Alerte": "Alert",
-"❗ Alerte d'entrée : joueur pas encore trié qui a joué au moins 400 minutes à ce poste sur les 30 derniers jours (onglet Tri & listes → Alertes). Aucune autre alerte (progression…) n'est signalée ici.": "❗ Entry alert: player not yet sorted who has played at least 400 minutes in this position over the last 30 days (Sorting & lists tab → Alerts). No other alert (progression…) is flagged here."
+"❗ Alerte d'entrée : joueur pas encore trié qui a joué au moins 400 minutes à ce poste sur les 30 derniers jours (onglet Tri & listes → Alertes). Aucune autre alerte (progression…) n'est signalée ici.": "❗ Entry alert: player not yet sorted who has played at least 400 minutes in this position over the last 30 days (Sorting & lists tab → Alerts). No other alert (progression…) is flagged here.",
+"Faisabilité": "Feasibility",
+"Profil data": "Data profile",
+"Step JPL": "JPL step",
+"Faisabilité du transfert : prix, contrat, concurrence, volonté du club et du joueur.": "Transfer feasibility: price, contract, competition from other clubs, willingness of club and player.",
+"Pertinence du profil data : ses chiffres correspondent-ils à ce que l'on cherche à ce poste ?": "Data profile relevance: do his numbers match what we are looking for in this position?",
+"Le passage en Jupiler Pro League est-il logique pour lui maintenant : niveau du championnat d'où il vient et moment de sa carrière (step trop grand, adapté ou recul).": "Does a move to the Jupiler Pro League make sense for him now: level of the league he comes from and stage of his career (step too big, right, or a step back).",
+"Cocher pour déplacer, ouvrir la fiche ou noter.": "Tick to move, open the profile or add a note.",
+"Coche des lignes (✓) pour les déplacer ; une seule ligne pour ouvrir sa fiche ou la noter. Feux : clique une case 🟢🟠🔴 pour la remplir ; enregistré pour tous les comptes, modifiable aussi depuis la fiche complète du joueur.": "Tick rows (✓) to move them; a single row to open its profile or add a note. Lights: click a 🟢🟠🔴 cell to fill it in; saved for all accounts, also editable from the player's full profile.",
+"**🚦 Feux de la liste**": "**🚦 List lights**"
 },
 "f": [
 [
