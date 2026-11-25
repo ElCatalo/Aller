@@ -4161,6 +4161,89 @@ def tri_trancher(r, player_id: int | None) -> None:
                    "WHERE cle=?", [r.cle])
 
 
+# ------------------------------------------------ amorce du screening (25/11/2026)
+# L'Excel de screening vit sur le PC d'Alex, et la base des listes en ligne (Neon)
+# n'est pas joignable depuis ce PC. importer_screening.py exporte donc l'etat de la
+# liaison (table tri_screening) dans screening_tri.parquet, publie avec l'app (accord
+# d'Alex le 25/11 : le depot est public, c'est accepte), et l'app le verse ici dans la
+# base des listes -- commune a TOUS les comptes. Rien de ce qui a ete fait dans l'app
+# n'est defait :
+#   - decision prise dans l'app (« manuel ») : l'amorce ne la remplace pas ;
+#   - joueur deplace ou renvoye dans « Trier » : intouche. Seule une ligne jamais
+#     bougee depuis son import suit l'Excel (changement de couleur, arbitrage).
+# Une seule passe par fichier publie (cache par signature), par lots : quelques
+# secondes au premier affichage apres une publication, rien ensuite.
+AMORCE_TRI = next((d / "screening_tri.parquet" for d in (_ICI / "data", _ICI)
+                   if (d / "screening_tri.parquet").exists()), None)
+_AMORCE_COLS = ["cle", "nom_excel", "archetype", "couleur", "tm_id", "origine", "commentaire", "statut",
+                "decision", "playerId", "candidats", "categorie_importee"]
+
+
+def sql_listes_lot(sql: str, lignes: list) -> None:
+    """Meme requete pour beaucoup de lignes, en un aller-retour (executemany)."""
+    if not lignes:
+        return
+    if not LISTES_URL:
+        con_listes().executemany(sql, lignes)
+        return
+    with con_listes().cursor() as cur:
+        cur.executemany(sql.replace("?", "%s"), lignes)
+
+
+@st.cache_resource(show_spinner="Mise à jour des listes depuis le screening…")
+def tri_amorcer(_signature: str) -> int:
+    """Verse l'amorce du screening dans la base des listes. Renvoie le nombre de mouvements."""
+    a = pd.read_parquet(AMORCE_TRI)
+    a = a.astype(object).where(a.notna(), None)
+    en_base = {r[0]: r[1:] for r in sql_listes(
+        "SELECT cle, statut, decision, playerId, categorie_importee, candidats FROM tri_screening")}
+    places = {(r[0], int(r[1])): (r[2], r[3]) for r in
+              sql_listes("SELECT archetype, playerId, categorie, source FROM tri_listes")}
+    retraits, maj, ajouts, hist, scr = [], [], [], [], []
+    for e in a.itertuples():
+        av = en_base.get(e.cle)
+        if av and av[1] == "manuel" and e.decision != "manuel":
+            continue                                   # tranche dans l'app : l'app a raison
+        pid = int(e.playerId) if e.statut == "lie" and e.playerId is not None else None
+        cat = e.categorie_importee
+        ancien = int(av[2]) if av and av[2] is not None else None
+        cat_avant = av[3] if av else None
+        if ancien is not None and ancien != pid:
+            # Ancien lien (homonyme corrige par un arbitrage) : retire s'il n'a jamais bouge.
+            pl = places.pop((e.archetype, ancien), None)
+            if pl and pl[1] == "excel" and pl[0] == cat_avant:
+                retraits.append([e.archetype, ancien])
+                hist.append([e.archetype, ancien, e.nom_excel, pl[0], None, "screening"])
+        if pid is not None and cat:
+            pl = places.get((e.archetype, pid))
+            if pl is None and ancien != pid:
+                ajouts.append([e.archetype, pid, cat, e.nom_excel, e.commentaire])
+                hist.append([e.archetype, pid, e.nom_excel, None, cat, "screening"])
+                places[(e.archetype, pid)] = (cat, "excel")
+            elif (pl and pl[1] == "excel" and ancien == pid and pl[0] == cat_avant and cat != pl[0]):
+                maj.append([cat, e.archetype, pid])     # couleur changee dans l'Excel, jamais deplace
+                hist.append([e.archetype, pid, e.nom_excel, pl[0], cat, "screening"])
+        if av is None or tuple(av) != (e.statut, e.decision, pid, cat, e.candidats):
+            scr.append([getattr(e, c) if c != "playerId" else pid for c in _AMORCE_COLS])
+    sql_listes_lot("DELETE FROM tri_listes WHERE archetype=? AND playerId=? AND source='excel'", retraits)
+    sql_listes_lot("UPDATE tri_listes SET categorie=?, modifie_le=now(), modifie_par='screening' "
+                   "WHERE archetype=? AND playerId=?", maj)
+    sql_listes_lot("INSERT INTO tri_listes (archetype, playerId, categorie, nom, club, source, note, ajoute_le, "
+                   "modifie_le, modifie_par) VALUES (?,?,?,?,NULL,'excel',?,now(),now(),'screening')", ajouts)
+    sql_listes_lot("INSERT INTO tri_historique (archetype, playerId, nom, de, vers, quand, par) "
+                   "VALUES (?,?,?,?,?,now(),?)", hist)
+    sql_listes_lot("DELETE FROM tri_screening WHERE cle=?", [[r[0]] for r in scr])
+    sql_listes_lot(f"INSERT INTO tri_screening ({', '.join(_AMORCE_COLS)}, maj_le) "
+                   f"VALUES ({', '.join('?' * len(_AMORCE_COLS))}, now())",
+                   [[None if isinstance(v, float) and pd.isna(v) else v for v in r] for r in scr])
+    return len(retraits) + len(maj) + len(ajouts)
+
+
+if AMORCE_TRI is not None:
+    _st_amorce = AMORCE_TRI.stat()
+    tri_amorcer(f"{AMORCE_TRI.name}:{_st_amorce.st_size}:{_st_amorce.st_mtime_ns}")
+
+
 # ------------------------------------------------------------ files d'attente
 def tri_file_saison(exclus: list[int], ordre: str, limite: int, decalage: int) -> tuple[int, pd.DataFrame]:
     """Joueurs a trier : le classement de saison avec les filtres de la barre
