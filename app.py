@@ -3660,8 +3660,9 @@ def carte_joueur(j, extra=None) -> None:
                      range_x=[0, 100], text="percentile",
                      labels={"percentile": "Percentile du poste", "pilier": ""},
                      hover_data={"poids": ":.1%"})
+        # 26/11/2026 (Alex) : meme degrade rouge -> vert que la fiche resume
         fig.update_traces(texttemplate="%{text:.0f}", textposition="outside",
-                          marker_color="#1F6F6B", cliponaxis=False)
+                          marker_color=[_couleur_percentile(v) for v in piliers["percentile"]], cliponaxis=False)
         fig.update_layout(height=360, margin=dict(l=0, r=20, t=30, b=0),
                           yaxis=dict(autorange="reversed"),
                           title="Piliers — survol : poids dans le score")
