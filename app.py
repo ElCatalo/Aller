@@ -4387,6 +4387,48 @@ def _choix_continents(ctx: str) -> list[str]:
     return list(choix or [])
 
 
+FILTRES_NUM = {"age": "Âge", "score": "Score", "qualite": "Qualité", "score_v8": "Score V8",
+               "minutes": "Minutes", "contrat_an": "Fin de contrat (année)", "performance": "Performance",
+               "progression": "Progression", "gros_matchs": "Gros matchs", "rang_mondial": "Rang"}
+FILTRES_TXT = {"club": "Club", "competition": "Compétition", "pays": "Pays", "niveau": "Niveau",
+               "saison": "Saison", "profil_principal": "Profil RCSC", "pied_fort": "Pied fort",
+               "archetype_courant": "Poste évalué"}
+
+
+def _filtres_colonnes(v: pd.DataFrame):
+    """Filtres par colonne des Listes, dans un volet replie. Renvoie les playerId gardes,
+    ou None si aucun filtre n'est actif. Une valeur manquante passe un filtre de plage
+    resté a ses bornes, et est retiree des qu'on le resserre."""
+    v = v.copy()
+    if "contrat_fin" in v:
+        v["contrat_an"] = pd.to_datetime(v["contrat_fin"], errors="coerce").dt.year
+    masque, actif = pd.Series(True, index=v.index), False
+    with st.expander("🔎 Filtrer par colonne"):
+        cols = st.columns(4)
+        i = 0
+        for c_, lib in FILTRES_NUM.items():
+            if c_ not in v:
+                continue
+            s = pd.to_numeric(v[c_], errors="coerce")
+            if s.notna().sum() < 2 or s.min() == s.max():
+                continue
+            entier = c_ in ("minutes", "contrat_an", "gros_matchs", "rang_mondial")
+            lo, hi = (int(s.min()), int(s.max())) if entier else (float(np.floor(s.min())), float(np.ceil(s.max())))
+            val = cols[i % 4].slider(lib, lo, hi, (lo, hi), key=f"tri_fcol_{c_}")
+            i += 1
+            if tuple(val) != (lo, hi):
+                masque &= s.between(*val)
+                actif = True
+        cols = st.columns(4)
+        for j, (c_, lib) in enumerate((k, l) for k, l in FILTRES_TXT.items() if k in v):
+            opts = sorted(v[c_].dropna().astype(str).unique())
+            choix = cols[j % 4].multiselect(lib, opts, key=f"tri_fcol_{c_}", placeholder=tr("Tous"))
+            if choix:
+                masque &= v[c_].astype(str).isin(choix)
+                actif = True
+    return v.loc[masque, "playerId"] if actif else None
+
+
 def tri_file_saison(exclus: list[int], ordre: str, limite: int, decalage: int,
                     continents: list[str] | None = None) -> tuple[int, pd.DataFrame]:
     """Joueurs a trier : le classement de saison avec les filtres de la barre
@@ -4976,6 +5018,14 @@ def vue_listes() -> None:
         places = places[places["playerId"].isin(ok)]
         vivant = vivant[vivant["playerId"].isin(ok)] if not vivant.empty else vivant
         filtre_feux = True
+    # 26/11/2026 (Alex) : presque toutes les colonnes filtrables (plages pour les nombres et
+    # l'annee de fin de contrat, choix multiples pour le texte). Sur la ligne affichee (vivant).
+    if not vivant.empty:
+        garde = _filtres_colonnes(vivant)
+        if garde is not None:
+            places = places[places["playerId"].isin(garde)]
+            vivant = vivant[vivant["playerId"].isin(garde)]
+            filtre_feux = True
     st.caption(f"**{len(places)}** joueur{'s' if len(places) > 1 else ''} classé{'s' if len(places) > 1 else ''} à "
                "ce poste. Les listes ne suivent pas les filtres de la barre latérale ; les valeurs sont celles "
                "du dernier build (saison la plus récente du joueur à ce poste).")

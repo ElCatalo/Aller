@@ -1989,5 +1989,22 @@
 "Amérique": "Americas",
 "Afrique": "Africa",
 "Asie": "Asia",
-"Continent du championnat où joue le joueur (saison affichée). Décocher un continent retire ses joueurs. Océanie comptée en Asie.": "Continent of the league the player plays in (season shown). Unticking a continent removes its players. Oceania counted as Asia."
+"Continent du championnat où joue le joueur (saison affichée). Décocher un continent retire ses joueurs. Océanie comptée en Asie.": "Continent of the league the player plays in (season shown). Unticking a continent removes its players. Oceania counted as Asia.",
+"🔎 Filtrer par colonne": "🔎 Filter by column",
+"Tous": "All",
+"Score V8": "V8 score",
+"Fin de contrat (année)": "Contract end (year)",
+"Performance": "Performance",
+"Progression": "Progression",
+"Gros matchs": "Big games",
+"Rang": "Rank",
+"Club": "Club",
+"Compétition": "Competition",
+"Pays": "Country",
+"Niveau": "Level",
+"Profil RCSC": "RCSC profile",
+"Poste évalué": "Assessed position",
+"Âge": "Age",
+"Qualité": "Quality",
+"Score": "Score"
 }
