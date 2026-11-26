@@ -4444,10 +4444,21 @@ def tri_enrichir(player_ids: tuple, arch: str) -> pd.DataFrame:
     # Avant, une vieille ligne au poste (TEN 2024, 535 min) battait la saison en cours a un
     # autre poste (EIGHT 2026). A saison egale, la ligne au poste reste preferee ; sinon la
     # colonne « Poste évalué » indique le poste ou Impect l'evalue.
+    # 26/11/2026 (cas Brage Tobiassen, SIX = EIGHT a minutes egales) : sans ligne au poste,
+    # on prend le poste le plus proche de la liste (TEN -> EIGHT avant SIX, etc.).
+    proches = POSTES_PROCHES.get(arch, [arch])
+    rang = "CASE archetype " + " ".join(f"WHEN '{a}' THEN {i}" for i, a in enumerate(proches)) + " ELSE 99 END"
     return requete(f"""SELECT {CHAMPS} FROM v_joueurs WHERE playerId IN ({','.join('?' * len(player_ids))})
         QUALIFY row_number() OVER (PARTITION BY playerId ORDER BY {FIN_SAISON_SQL} DESC,
-                                   (archetype = ?) DESC, minutes_jouees DESC) = 1""",
-                   tuple(int(p) for p in player_ids) + (arch,))
+                                   {rang}, minutes_jouees DESC) = 1""",
+                   tuple(int(p) for p in player_ids))
+
+
+# Ordre de proximite des postes, pour choisir le profil d'un joueur sans ligne au poste de la liste.
+POSTES_PROCHES = {"GK": ["GK"], "CB": ["CB", "FB", "SIX"], "FB": ["FB", "WG", "CB"],
+                  "WG": ["WG", "TEN", "FB", "NINE"], "SIX": ["SIX", "EIGHT", "CB"],
+                  "EIGHT": ["EIGHT", "SIX", "TEN"], "TEN": ["TEN", "EIGHT", "WG", "NINE", "SIX"],
+                  "NINE": ["NINE", "TEN", "WG"]}
 
 
 # ------------------------------------------------------------ fiche resume
@@ -5035,6 +5046,20 @@ def vue_listes() -> None:
                     tri_noter(arch, r["playerId"], note)
                     st.session_state["_tri_version"] = version + 1
                     st.session_state["_message_listes"] = f"Note enregistrée : {r['nom']}"
+                    st.rerun()
+                # 26/11/2026 (Alex, cas Ibrahim Kanaté) : changer le joueur de poste, meme liste,
+                # note conservee. Son profil suit alors le nouveau poste (tri_enrichir).
+                p1, p2 = st.columns([5, 1], vertical_alignment="bottom")
+                autre = p1.selectbox("Changer de poste (même liste)", [a for a in ARCHETYPES if a != arch],
+                                     key=f"tri_poste_{arch}_{code}",
+                                     format_func=lambda a: f"{a} — {tr(ARCHETYPES[a])}")
+                if p2.button("Changer", key=f"tri_poste_ok_{arch}_{code}", width="stretch"):
+                    tri_classer(autre, r["playerId"], code, r["nom"], r["club"], memoriser=False)
+                    if r["note"]:
+                        tri_noter(autre, r["playerId"], r["note"])
+                    tri_classer(arch, r["playerId"], None, memoriser=False)
+                    st.session_state["_tri_version"] = version + 1
+                    st.session_state["_message_listes"] = f"{r['nom']} → {autre}"
                     st.rerun()
                 # 26/11/2026 (Alex) : une ligne cochee -> sa fiche resume sous le tableau
                 # (ligne « vivante » du build, la meme que celle qui alimente le tableau).
