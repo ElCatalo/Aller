@@ -4440,9 +4440,13 @@ def tri_enrichir(player_ids: tuple, arch: str) -> pd.DataFrame:
     recente, puis la plus jouee), a defaut leur ligne la plus recente ailleurs."""
     if not player_ids:
         return pd.DataFrame()
+    # 26/11/2026 (Alex, cas Filip Jørgensen) : la saison la plus recente prime sur le poste.
+    # Avant, une vieille ligne au poste (TEN 2024, 535 min) battait la saison en cours a un
+    # autre poste (EIGHT 2026). A saison egale, la ligne au poste reste preferee ; sinon la
+    # colonne « Poste évalué » indique le poste ou Impect l'evalue.
     return requete(f"""SELECT {CHAMPS} FROM v_joueurs WHERE playerId IN ({','.join('?' * len(player_ids))})
-        QUALIFY row_number() OVER (PARTITION BY playerId ORDER BY (archetype = ?) DESC,
-                                   {FIN_SAISON_SQL} DESC, minutes_jouees DESC) = 1""",
+        QUALIFY row_number() OVER (PARTITION BY playerId ORDER BY {FIN_SAISON_SQL} DESC,
+                                   (archetype = ?) DESC, minutes_jouees DESC) = 1""",
                    tuple(int(p) for p in player_ids) + (arch,))
 
 
