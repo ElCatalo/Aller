@@ -1983,5 +1983,11 @@
 "Changer": "Change",
 "Saison": "Season",
 "Minutes": "Minutes",
-"Pied fort": "Strong foot"
+"Pied fort": "Strong foot",
+"Continent du club": "Club continent",
+"Europe": "Europe",
+"Amérique": "Americas",
+"Afrique": "Africa",
+"Asie": "Asia",
+"Continent du championnat où joue le joueur (saison affichée). Décocher un continent retire ses joueurs. Océanie comptée en Asie.": "Continent of the league the player plays in (season shown). Unticking a continent removes its players. Oceania counted as Asia."
 }

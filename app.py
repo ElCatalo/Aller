@@ -4350,16 +4350,58 @@ if AMORCE_TRI is not None:
 
 
 # ------------------------------------------------------------ files d'attente
-def tri_file_saison(exclus: list[int], ordre: str, limite: int, decalage: int) -> tuple[int, pd.DataFrame]:
+# 26/11/2026 (Alex) : filtre continent de Trier et Listes, d'apres le pays du championnat
+# (colonne pays de v_joueurs = pays du club). Pays absent des listes = Europe.
+# Oceanie (Australie) rangee en Asie (confederation AFC).
+CONTINENTS = {
+    "Amérique": ["Argentina", "Bolivia", "Brazil", "Canada", "Chile", "Colombia", "Costa Rica", "Ecuador",
+                 "Guatemala", "Honduras", "Mexico", "Panama", "Paraguay", "Peru", "United States", "Uruguay",
+                 "Venezuela", "El Salvador", "Jamaica"],
+    "Afrique": ["Morocco", "South Africa", "Egypt", "Tunisia", "Algeria", "Nigeria", "Ghana", "Senegal",
+                "Ivory Coast", "Côte d'Ivoire", "Cameroon", "Mali", "Kenya", "Tanzania", "Zambia"],
+    "Asie": ["Australia", "China PR", "Japan", "Korea Republic", "Qatar", "Saudi Arabia", "Thailand",
+             "United Arab Emirates", "India", "Indonesia", "Iran", "Iraq", "Kuwait", "Bahrain", "Oman",
+             "Malaysia", "Vietnam", "Uzbekistan", "Jordan"],
+}
+CONTINENTS_TOUS = ["Europe", "Amérique", "Afrique", "Asie"]
+_PAYS_CONTINENT = {p: c for c, ps in CONTINENTS.items() for p in ps}
+
+
+def continent_de(pays) -> str:
+    return _PAYS_CONTINENT.get(pays, "Europe")
+
+
+def continent_sql() -> str:
+    """Meme correspondance que continent_de, en SQL (colonne pays)."""
+    q = lambda p: "'" + p.replace("'", "''") + "'"  # noqa: E731
+    return "CASE " + " ".join(f"WHEN pays IN ({','.join(q(p) for p in ps)}) THEN '{c}'"
+                              for c, ps in CONTINENTS.items()) + " ELSE 'Europe' END"
+
+
+def _choix_continents(ctx: str) -> list[str]:
+    """Pastilles des 4 continents, toutes cochees par defaut."""
+    choix = st.pills("Continent du club", CONTINENTS_TOUS, selection_mode="multi", default=CONTINENTS_TOUS,
+                     key=f"tri_cont_{ctx}", format_func=tr,
+                     help="Continent du championnat où joue le joueur (saison affichée). Décocher un continent "
+                          "retire ses joueurs. Océanie comptée en Asie.")
+    return list(choix or [])
+
+
+def tri_file_saison(exclus: list[int], ordre: str, limite: int, decalage: int,
+                    continents: list[str] | None = None) -> tuple[int, pd.DataFrame]:
     """Joueurs a trier : le classement de saison avec les filtres de la barre
     laterale, sans les joueurs deja classes, UNE ligne par joueur (sa saison la
-    plus recente parmi les lignes filtrees, puis la plus jouee)."""
+    plus recente parmi les lignes filtrees, puis la plus jouee). continents :
+    garde les joueurs dont cette ligne-la est dans un de ces continents."""
     filtre, pa = " AND ".join(where), list(_extra_params) + list(params)
     if exclus:
         filtre += f" AND playerId NOT IN ({','.join('?' * len(exclus))})"
         pa += exclus
     base = f"""SELECT {CHAMPS}{_extra_select} FROM v_joueurs WHERE {filtre}
         QUALIFY row_number() OVER (PARTITION BY playerId ORDER BY {FIN_SAISON_SQL} DESC, minutes_jouees DESC) = 1"""
+    if continents is not None and set(continents) != set(CONTINENTS_TOUS):
+        lst = ",".join(f"'{c}'" for c in continents) or "''"
+        base = f"SELECT * FROM ({base}) b WHERE ({continent_sql()}) IN ({lst})"
     n = int(requete(f"SELECT count(*) AS n FROM ({base}) t", tuple(pa)).iloc[0]["n"])
     res = requete(f"SELECT * FROM ({base}) t ORDER BY {ordre}, score DESC NULLS LAST, playerId "
                   f"LIMIT {int(limite)} OFFSET {int(decalage)}", tuple(pa))
@@ -4805,9 +4847,10 @@ def _barre_tri(ctx: str, options: dict) -> tuple[str, bool]:
 def vue_trier() -> None:
     st.markdown(f"#### Trier · {archetype} — {ARCHETYPES[archetype]}")
     ordre, tous = _barre_tri("trier", _options_tri_saison())
+    conts = _choix_continents("trier")
     exclus = tri_ids_classes(archetype, tous)
-    saut = _decalage("trier", f"{archetype}|{where}|{params}|{ordre}|{tous}|{cle_donnees()}")
-    n, res = tri_file_saison(exclus, ordre, 6, saut)
+    saut = _decalage("trier", f"{archetype}|{where}|{params}|{ordre}|{tous}|{conts}|{cle_donnees()}")
+    n, res = tri_file_saison(exclus, ordre, 6, saut, conts)
     if res.empty and saut:
         st.session_state["tri_saut_trier"] = 0
         st.rerun()
@@ -4925,7 +4968,14 @@ def vue_listes() -> None:
     if tuple(tot) != (0, 6):
         places = places[places["feux_total"].between(*tot)]
         filtre_feux = True
+    # 26/11/2026 (Alex) : continent du club, sous les feux ; d'apres la ligne affichee (vivant).
+    conts = _choix_continents("listes")
     vivant = tri_enrichir(tuple(places["playerId"].tolist()), arch)
+    if set(conts) != set(CONTINENTS_TOUS):
+        ok = vivant.loc[vivant["pays"].map(continent_de).isin(conts), "playerId"] if not vivant.empty else []
+        places = places[places["playerId"].isin(ok)]
+        vivant = vivant[vivant["playerId"].isin(ok)] if not vivant.empty else vivant
+        filtre_feux = True
     st.caption(f"**{len(places)}** joueur{'s' if len(places) > 1 else ''} classé{'s' if len(places) > 1 else ''} à "
                "ce poste. Les listes ne suivent pas les filtres de la barre latérale ; les valeurs sont celles "
                "du dernier build (saison la plus récente du joueur à ce poste).")
