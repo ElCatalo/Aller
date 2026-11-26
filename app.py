@@ -5029,6 +5029,12 @@ def vue_listes() -> None:
                     st.session_state["_tri_version"] = version + 1
                     st.session_state["_message_listes"] = f"Note enregistrée : {r['nom']}"
                     st.rerun()
+                # 26/11/2026 (Alex) : une ligne cochee -> sa fiche resume sous le tableau
+                # (ligne « vivante » du build, la meme que celle qui alimente le tableau).
+                if not vivant.empty:
+                    _v = vivant[vivant["playerId"] == r["playerId"]]
+                    if not _v.empty:
+                        fiche_resume(_v.iloc[0], f"liste_{code}")
             else:
                 st.caption("Coche des lignes (✓) pour les déplacer ; une seule ligne pour ouvrir sa fiche ou la "
                            "noter. Feux : clique une case 🟢🟠🔴 pour la remplir ; enregistré pour tous les comptes, "
