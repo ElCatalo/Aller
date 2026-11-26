@@ -4163,9 +4163,11 @@ TRI_FEUX = {   # code en base -> (en-tete de colonne, aide)
                                    "et du joueur."),
     "profil_data": ("Profil data", "Pertinence du profil data : ses chiffres correspondent-ils à ce que l'on "
                                    "cherche à ce poste ?"),
-    "step_jpl": ("Step JPL", "Le passage en Jupiler Pro League est-il logique pour lui maintenant : niveau du "
-                             "championnat d'où il vient et moment de sa carrière (step trop grand, adapté ou "
-                             "recul)."),
+    # 26/11/2026 (Alex) : « Step JPL » -> « Step Charleroi » (code en base inchange : step_jpl).
+    "step_jpl": ("Step Charleroi", "Apprécié pour Charleroi : niveau d'adaptation du joueur à "
+                                   "l'environnement de Charleroi. Le passage chez nous est-il logique pour "
+                                   "lui maintenant : niveau du championnat d'où il vient et moment de sa "
+                                   "carrière (step trop grand, adapté ou recul)."),
 }
 FEUX = {"vert": "🟢", "orange": "🟠", "rouge": "🔴"}
 FEU_DE_PICTO = {v: k for k, v in FEUX.items()}
