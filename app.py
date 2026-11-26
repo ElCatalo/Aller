@@ -5073,31 +5073,33 @@ def vue_listes() -> None:
                 disabled=[c_ for c_ in df.columns if c_ not in ["choisir", *feux_cols]],
                 column_config={
                     "choisir": st.column_config.CheckboxColumn(
-                        "✓", width="small", help="Cocher pour déplacer, ouvrir la fiche ou noter."),
+                        "✓", width=40, help="Cocher pour déplacer, ouvrir la fiche ou noter."),
                     **{f"feu_{c_}": st.column_config.SelectboxColumn(ent, options=list(FEUX.values()),
-                                                                     width="small", help=aide)
+                                                                     width=48, help=aide)
                        for c_, (ent, aide) in TRI_FEUX.items()},
                     # Largeurs reduites (px) pour voir minutes et pied fort sans defiler.
-                    "nom": st.column_config.TextColumn("Nom", width=150),
-                    "age": st.column_config.NumberColumn("Âge", width=50),
-                    "club": st.column_config.TextColumn("Club", width=105),
-                    "competition": st.column_config.TextColumn("Compétition", width=105),
+                    "nom": st.column_config.TextColumn("Nom", width=130),
+                    "age": st.column_config.NumberColumn("Âge", width=45),
+                    "club": st.column_config.TextColumn("Club", width=95),
+                    "competition": st.column_config.TextColumn("Compétition", width=95),
                     "feux_total": st.column_config.NumberColumn(
-                        "Σ feux", format="%d", width="small",
+                        "Σ feux", format="%d", width=80,
                         help="Total des 3 feux : 🔴 = 0, 🟠 = 1, 🟢 = 2 (6 = trois verts). Vide : aucun feu posé. "
                              "Clique l'en-tête pour trier."),
                     "score": st.column_config.ProgressColumn(COURT, min_value=0, max_value=120, format="%.1f",
-                                                             width="small",
+                                                             width=80,
                                                              help=f"{tr(lecture)} — {tr(LECTURES[lecture]['aide'])}"),
-                    # 26/11/2026 (Alex) : largeurs fixes jusqu'a « minutes » pour tout voir en
+                    # REGLE (Alex, 26/11) : tout jusqu'a « Pied fort » visible SANS defiler sur ~1350 px, quel que soit le poste.
+                    # Somme des largeurs ci-dessus jusqu'a pied_fort ≈ 1050 px : ne pas l'augmenter.
+                    # 26/11/2026 (Alex) : largeurs fixes jusqu'a « pied fort » pour tout voir en
                     # une image, quel que soit le poste (sinon la largeur suit le contenu).
-                    "saison": st.column_config.TextColumn("Saison", width=58),
+                    "saison": st.column_config.TextColumn("Saison", width=55),
                     "qualite": st.column_config.NumberColumn("Qualité", format="%.1f", width=60),
                     "score_v8": st.column_config.NumberColumn("Score", format="%.1f", width=60),
-                    "contrat_fin": st.column_config.DateColumn("Fin contrat", format="MM/YYYY", width=75),
-                    "minutes": st.column_config.NumberColumn("Minutes", format="%d", width=62),
-                    "pied_fort": st.column_config.TextColumn("Pied fort", width=70),
-                    "profil_principal": st.column_config.TextColumn("Profil RCSC", width=120),
+                    "contrat_fin": st.column_config.DateColumn("Fin contrat", format="MM/YYYY", width=72),
+                    "minutes": st.column_config.NumberColumn("Minutes", format="%d", width=60),
+                    "pied_fort": st.column_config.TextColumn("Pied fort", width=68),
+                    "profil_principal": st.column_config.TextColumn("Profil RCSC", width=105),
                     "gros_matchs": st.column_config.NumberColumn("Gros matchs"),
                     "progression": st.column_config.NumberColumn("Progression", format="%+.1f"),
                     "rang_mondial": st.column_config.NumberColumn("Rang", format="%d"),
