@@ -4387,9 +4387,10 @@ def _choix_continents(ctx: str) -> list[str]:
     return list(choix or [])
 
 
-FILTRES_NUM = {"age": "Âge", "score": "Score", "qualite": "Qualité", "score_v8": "Score V8",
-               "minutes": "Minutes", "contrat_an": "Fin de contrat (année)", "performance": "Performance",
-               "progression": "Progression", "gros_matchs": "Gros matchs", "rang_mondial": "Rang"}
+# 27/11/2026 (Alex) : retires des filtres -- performance, score V8 (doublon de Score), progression,
+# gros matchs, rang.
+FILTRES_NUM = {"age": "Âge", "score": "Score", "qualite": "Qualité",
+               "minutes": "Minutes", "contrat_an": "Fin de contrat (année)"}
 FILTRES_TXT = {"club": "Club", "competition": "Compétition", "pays": "Pays", "niveau": "Niveau",
                "saison": "Saison", "profil_principal": "Profil RCSC", "pied_fort": "Pied fort",
                "archetype_courant": "Poste évalué"}
