@@ -2006,5 +2006,6 @@
 "Poste évalué": "Assessed position",
 "Âge": "Age",
 "Qualité": "Quality",
-"Score": "Score"
+"Score": "Score",
+"❗ Alerte d'entrée : joueur pas encore trié dont le total de minutes de la saison à ce poste a franchi 400 minutes au cours des 30 derniers jours. Aucune autre alerte (progression…) n'est signalée ici.": "❗ Entry alert: player not yet sorted whose season total of minutes in this position went past 400 minutes during the last 30 days. No other alert (progression…) is shown here."
 }

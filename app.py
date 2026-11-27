@@ -4494,8 +4494,22 @@ MINUTES_ALERTE = 400
 
 @st.cache_data(ttl=600, show_spinner=False)
 def _alerte_400_mon(arch: str, periode_j: int, seuil: int) -> frozenset:
-    r = requete("""SELECT playerId FROM mon.mon_joueur WHERE archetype=? AND periode_jours=?
-        GROUP BY playerId HAVING sum(minutes) >= ?""", (arch, periode_j, seuil))
+    # 27/11/2026 (Alex) : sens corrige. Ce n'est PAS « 400 min joues dans les 30 jours » mais
+    # « le TOTAL de la saison a ce poste a franchi 400 min au cours des 30 derniers jours » :
+    # total saison >= 400 ET total avant la periode (total - minutes de la periode) < 400.
+    # Total saison = minutes_jouees de sa ligne la plus recente a ce poste (v_joueurs) ; minutes
+    # de la periode = mon_match du meme club-saison (iterationId) depuis la derniere date - N jours.
+    r = requete(f"""WITH sai AS (
+            SELECT playerId, iterationId, minutes_jouees AS total FROM v_joueurs WHERE archetype = ?
+            QUALIFY row_number() OVER (PARTITION BY playerId ORDER BY {FIN_SAISON_SQL} DESC,
+                                       minutes_jouees DESC) = 1),
+        per AS (
+            SELECT playerId, iterationId, sum(minutes) AS recentes FROM mon.mon_match
+            WHERE archetype = ? AND date > (SELECT max(date) FROM mon.mon_match) - to_days(?)
+            GROUP BY playerId, iterationId)
+        SELECT sai.playerId FROM sai JOIN per USING (playerId, iterationId)
+        WHERE sai.total >= ? AND sai.total - per.recentes < ?""",
+                (arch, arch, int(periode_j), seuil, seuil))
     return frozenset(int(x) for x in r["playerId"])
 
 
@@ -5365,8 +5379,8 @@ with ({"trier": sous_trier, "alerte": sous_alerte, "listes": sous_listes}[TRI_VU
                     "Fiabilité pivot", help="Bonne, moyenne ou faible selon le nombre de ballons disputés."),
                 "alerte_400": st.column_config.TextColumn(
                     "Alerte", width="small",
-                    help="❗ Alerte d'entrée : joueur pas encore trié qui a joué au moins 400 minutes à ce "
-                         "poste sur les 30 derniers jours (onglet Tri & listes → Alertes). Aucune autre "
+                    help="❗ Alerte d'entrée : joueur pas encore trié dont le total de minutes de la saison à ce "
+                         "poste a franchi 400 minutes au cours des 30 derniers jours. Aucune autre "
                          "alerte (progression…) n'est signalée ici."),
                 "prudence": st.column_config.TextColumn(
                     "⚠", width="small",
