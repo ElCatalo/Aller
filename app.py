@@ -1367,6 +1367,24 @@ _libelles_profils = {f"{r.num} · {r.nom}": r.profil_id for r in _profils_poste.
 # calcules sur une saison complete).
 profil_id, seuil_correspondance, tri_profil, saison = None, 50, COURT, []
 _choix_profil = "Tous les profils"
+# 27/11/2026 (Alex) : recherches-types Charleroi. Chaque condition = (piliers, seuil) : AU MOINS UN des
+# piliers (pilier de score ou profil RCSC « profil:<id> ») au percentile / a la correspondance >= seuil.
+RECHERCHES_TYPES = {
+    "SIX": {"SIX Charleroi": [(["profil:mid_regulateur", "profil:mid_casseur"], 70),
+                              (["progression_passe"], 60), (["securite_balle"], 70)],
+            "SIX Charleroi + création": [(["profil:mid_regulateur", "profil:mid_casseur"], 70),
+                                         (["progression_passe"], 60), (["securite_balle"], 70), (["creation"], 40)]},
+    "TEN": {"TEN Charleroi": [(["creation"], 70), (["progression_passe"], 70), (["pressing"], 70),
+                              (["reception_btl"], 50)]},
+}
+RECHERCHES_TYPES_AIDE = {
+    "SIX": "Le 6 recherché par Charleroi (régulateur / casseur technique, type Boukamir – Khalifi) : "
+           "Régulateur ou Casseur ≥ 70 de correspondance, progression passe ≥ P60, sécurité balle ≥ P70 ; "
+           "« + création » ajoute création ≥ P40.",
+    "TEN": "Le 10 complet et travailleur (type Romsaas) : création, progression passe et pressing ≥ P70, "
+           "réception entre les lignes ≥ P50.",
+}
+recherche_type = None
 if ALERTE:
     tri_monitoring = "Score"
 elif MONITORING:
@@ -1388,6 +1406,12 @@ else:
     # joueurs du profil par la lecture choisie, la correspondance reste affichee.
     tri_profil = st.sidebar.radio("Classer les joueurs du profil par", [COURT, "Correspondance"],
                                   horizontal=True, disabled=profil_id is None)
+    # 27/11/2026 (Alex) : recherches-types Charleroi (SIX, TEN), filtres sur les percentiles de piliers.
+    if archetype in RECHERCHES_TYPES:
+        _rt = st.sidebar.selectbox(
+            "Recherche-type Charleroi", ["Aucune", *RECHERCHES_TYPES[archetype]], format_func=tr,
+            help=RECHERCHES_TYPES_AIDE[archetype])
+        recherche_type = RECHERCHES_TYPES[archetype].get(_rt)
     saison = st.sidebar.multiselect("Saison", saisons, default=[s for s in saisons if s in ("26/27", "2026")])
 recherche = st.sidebar.text_input(
     "Recherche par nom", placeholder="ex. Guiagon",
@@ -1975,6 +1999,21 @@ if not MONITORING and not VUE_RCSC and not VUE_PRESSION and not VUE_JEUNES:
         _ordre = f"corr_profil DESC, {SC} DESC" if tri_profil == "Correspondance" else f"{SC} DESC, corr_profil DESC"
     if tri_pivot:
         _ordre = f"pivot_score DESC NULLS LAST, {SC} DESC"
+    # Recherche-type Charleroi : meme joueur-saison, meme pool (cles de v_joueurs).
+    _CLE = ("{t}.playerId = v_joueurs.playerId AND {t}.squadId = v_joueurs.squadId AND {t}.iterationId = "
+            "v_joueurs.iterationId AND {t}.position = v_joueurs.position AND {t}.archetype = v_joueurs.archetype")
+    for _noms, _seuil in (recherche_type or []):
+        _ou = []
+        for _n in _noms:
+            if _n.startswith("profil:"):
+                _ou.append(f"EXISTS (SELECT 1 FROM fait_profil rp WHERE {_CLE.format(t='rp')} "
+                           "AND rp.profil_id = ? AND rp.correspondance >= ?)")
+                params += [_n.split(":", 1)[1], _seuil]
+            else:
+                _ou.append(f"EXISTS (SELECT 1 FROM fait_pilier rq WHERE {_CLE.format(t='rq')} "
+                           "AND rq.pilier = ? AND rq.percentile >= ?)")
+                params += [_n, _seuil]
+        where.append("(" + " OR ".join(_ou) + ")")
 
     # Tri & listes : memes filtres, mais pas le classement de 500 lignes.
     if not VUE_TRI:

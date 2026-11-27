@@ -2007,5 +2007,12 @@
 "Âge": "Age",
 "Qualité": "Quality",
 "Score": "Score",
-"❗ Alerte d'entrée : joueur pas encore trié dont le total de minutes de la saison à ce poste a franchi 400 minutes au cours des 30 derniers jours. Aucune autre alerte (progression…) n'est signalée ici.": "❗ Entry alert: player not yet sorted whose season total of minutes in this position went past 400 minutes during the last 30 days. No other alert (progression…) is shown here."
+"❗ Alerte d'entrée : joueur pas encore trié dont le total de minutes de la saison à ce poste a franchi 400 minutes au cours des 30 derniers jours. Aucune autre alerte (progression…) n'est signalée ici.": "❗ Entry alert: player not yet sorted whose season total of minutes in this position went past 400 minutes during the last 30 days. No other alert (progression…) is shown here.",
+"Recherche-type Charleroi": "Charleroi search template",
+"Aucune": "None",
+"SIX Charleroi": "Charleroi SIX",
+"SIX Charleroi + création": "Charleroi SIX + creation",
+"TEN Charleroi": "Charleroi TEN",
+"Le 6 recherché par Charleroi (régulateur / casseur technique, type Boukamir – Khalifi) : Régulateur ou Casseur ≥ 70 de correspondance, progression passe ≥ P60, sécurité balle ≥ P70 ; « + création » ajoute création ≥ P40.": "The 6 Charleroi is looking for (technical holding / destroyer midfielder, Boukamir – Khalifi type): Holding or Destroyer match ≥ 70, pass progression ≥ P60, ball security ≥ P70; \"+ creation\" adds creation ≥ P40.",
+"Le 10 complet et travailleur (type Romsaas) : création, progression passe et pressing ≥ P70, réception entre les lignes ≥ P50.": "The complete, hard-working 10 (Romsaas type): creation, pass progression and pressing ≥ P70, receiving between the lines ≥ P50."
 }
