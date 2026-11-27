@@ -4403,7 +4403,7 @@ def _filtres_colonnes(v: pd.DataFrame):
     if "contrat_fin" in v:
         v["contrat_an"] = pd.to_datetime(v["contrat_fin"], errors="coerce").dt.year
     masque, actif = pd.Series(True, index=v.index), False
-    with st.expander("🔎 Filtrer par colonne"):
+    with st.expander("🔎 Filtrer par colonne", expanded=True):   # ouvert par défaut (Alex, 27/11)
         cols = st.columns(4)
         i = 0
         for c_, lib in FILTRES_NUM.items():
